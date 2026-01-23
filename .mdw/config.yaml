@@ -1,7 +1,0 @@
-schema: "policy-doc-v1"
-formatter:
-  ruleset: "v1"
-permissions:
-  enforcement: "blocking"
-export:
-  default_profile: "external"
