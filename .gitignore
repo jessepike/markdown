@@ -1,0 +1,26 @@
+# Binaries
+/mdw
+/ui/src-tauri/target/
+
+# Go
+/vendor/
+go.sum
+
+# Node
+/node_modules/
+/ui/node_modules/
+/ui/dist/
+/.next/
+
+# Tauri
+/ui/src-tauri/gen/
+
+# OS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+
+# Local Config
+.env
