@@ -1,4 +1,5 @@
 import { EditorView, basicSetup } from "codemirror";
+import { placeholder } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 // Theme handled by custom definition below
@@ -37,6 +38,7 @@ export function createEditor(parent, initialContent, onChange) {
             basicSetup, // Using the convenience basicSetup from 'codemirror' package
             markdown(),
             zedTheme,
+            placeholder("Start typing..."),
             EditorView.updateListener.of((update) => {
                 if (update.docChanged) {
                     onChange(update.state.doc.toString());
