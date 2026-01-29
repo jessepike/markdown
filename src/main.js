@@ -1,11 +1,16 @@
 import './style.css';
 import { createEditor } from './editor.js';
 import DOMPurify from 'dompurify';
-import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
+import { readTextFile, writeTextFile, stat } from '@tauri-apps/plugin-fs';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { prefs } from './preferences.js';
+import { prefsUI } from './preferences-ui.js';
+import { statusBar } from './status-bar.js';
+import { normalizationUI } from './normalization-ui.js';
+import { reloadPromptUI } from './reload-prompt-ui.js';
 
 const RECENT_FILES_KEY = 'pike-recent-files';
 const SPLIT_RATIO_KEY = 'pike-split-ratio';
@@ -34,6 +39,9 @@ let isRenderFmEnabled = localStorage.getItem(RENDER_FM_KEY) !== 'false';
 let currentFilePath = null;
 let debounceTimer = null;
 let isPreviewPaused = false;
+let isSaving = false; // Latch to prevent self-triggering watcher
+let lastSavedContent = ''; // Debounce self-edits
+let lastKnownMtime = 0;
 
 console.log('Pike Markdown: Main script initializing...');
 
@@ -42,6 +50,31 @@ window.onerror = function (message, source, lineno, colno, error) {
     console.error('Global Error Caught:', message, error);
     alert(`App Error: ${message}`);
 };
+
+// Initialize Preferences
+(async () => {
+    await prefs.init();
+    applySettings(prefs.getAll());
+})();
+
+function applySettings(settings) {
+    // 1. Font Size
+    document.documentElement.style.setProperty('--editor-font-size', `${settings.editorFontSize}px`);
+
+    // 2. Sync Scroll
+    isSyncScrollEnabled = settings.syncScroll;
+
+    // 3. Render Frontmatter
+    if (isRenderFmEnabled !== settings.renderFrontmatter) {
+        isRenderFmEnabled = settings.renderFrontmatter;
+        forceRefresh();
+    }
+}
+
+// Subscribe to changes
+prefs.subscribe(applySettings);
+
+// Drag & Drop (Native Fallback - Set up early)
 
 // Drag & Drop (Native Fallback - Set up early)
 document.addEventListener('dragover', (e) => {
@@ -187,14 +220,43 @@ worker.onmessage = (e) => {
     markdownBody.innerHTML = cleanHtml;
 };
 
+// Token Worker
+const tokenWorker = new Worker(new URL('./token.worker.js', import.meta.url), {
+    type: 'module'
+});
+
+tokenWorker.onmessage = (e) => {
+    if (e.data.count !== undefined) {
+        statusBar.updateTokens(e.data.count);
+    } else if (e.data.error) {
+        console.error(`Token Worker Error: ${e.data.error}`);
+    }
+};
+
+// Auto-save Logic
 // Auto-save Logic
 async function performAutoSave(content) {
     if (currentFilePath) {
         try {
+            isSaving = true;
             await writeTextFile(currentFilePath, content);
             console.log('Auto-saved to', currentFilePath);
+
+            // Update mtime to prevent watcher trigger
+            try {
+                const stats = await stat(currentFilePath);
+                lastKnownMtime = stats.mtime ? new Date(stats.mtime).getTime() : Date.now();
+            } catch (e) { }
+
+            // Sync reference
+            lastSavedContent = content;
+
         } catch (err) {
             console.error('Auto-save failed:', err);
+        } finally {
+            setTimeout(() => {
+                isSaving = false;
+            }, 500);
         }
     }
 }
@@ -228,11 +290,36 @@ const editor = createEditor(editorContainer, "", (newContent) => {
                     options: { renderFrontmatter: isRenderFmEnabled }
                 });
             }
-            // 2. Auto-save
-            performAutoSave(newContent);
+
+            // 2. Auto-save (only if changed)
+            if (newContent !== lastSavedContent) {
+                performAutoSave(newContent);
+            }
+
+            // 3. Update Token Count
+            statusBar.updateTokens('...');
+            tokenWorker.postMessage(newContent);
+
         }, delay);
     }
+}, (line, col) => {
+    statusBar.updateCursor(line, col);
+}, () => {
+    // onPaste: trigger auto-normalization if enabled
+    if (prefs.get('normalizationMode') === 'auto') {
+        const content = editor.state.doc.toString();
+        normalizationUI.showDiff(content, (normalized) => {
+            editor.dispatch({
+                changes: { from: 0, to: editor.state.doc.length, insert: normalized }
+            });
+            performAutoSave(normalized);
+            tokenWorker.postMessage(normalized);
+        });
+    }
 });
+
+// Init Status Bar
+statusBar.init(app);
 
 // Initial Render
 worker.postMessage({
@@ -306,14 +393,97 @@ previewContainer.addEventListener('scroll', () => handleSyncScroll(markdownBody.
         });
 
         await listen('toggle-sync-scroll', (e) => {
-            isSyncScrollEnabled = e.payload;
-            localStorage.setItem(SYNC_SCROLL_KEY, isSyncScrollEnabled);
+            // Legacy menu handler - update prefs instead which triggers subscriber
+            prefs.set('syncScroll', e.payload);
         });
 
         await listen('toggle-frontmatter', (e) => {
-            isRenderFmEnabled = e.payload;
-            localStorage.setItem(RENDER_FM_KEY, isRenderFmEnabled);
-            forceRefresh();
+            // Legacy menu handler
+            prefs.set('renderFrontmatter', e.payload);
+        });
+
+        await listen('menu-preferences', () => {
+            prefsUI.toggle();
+        });
+
+        await listen('menu-normalize', () => {
+            const content = editor.state.doc.toString();
+            normalizationUI.showDiff(content, (normalized) => {
+                editor.dispatch({
+                    changes: { from: 0, to: editor.state.doc.length, insert: normalized }
+                });
+                performAutoSave(normalized);
+                tokenWorker.postMessage(normalized); // Update token count immediately
+            });
+        });
+
+
+        await listen('menu-copy-llm', async () => {
+            const sel = editor.state.selection.main;
+            const hasSelection = sel.from !== sel.to;
+            let content;
+
+            if (hasSelection) {
+                // Copy selection only — no frontmatter stripping
+                content = editor.state.doc.sliceString(sel.from, sel.to);
+            } else {
+                // Copy full document
+                content = editor.state.doc.toString();
+                // Strip YAML Frontmatter unless preference says to include it
+                if (!prefs.get('includeFrontmatterInCopyLLM')) {
+                    content = content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '');
+                }
+            }
+
+            const tag = prefs.get('xmlWrapperTag') || 'document';
+            const wrapped = `<${tag}>\n${content}\n</${tag}>`;
+            try {
+                await navigator.clipboard.writeText(wrapped);
+                alert("Copied wrapped content to clipboard!");
+            } catch (err) {
+                console.error('Failed to copy', err);
+                alert("Failed to copy to clipboard.");
+            }
+        });
+
+        // File Watcher Event
+        // File Watcher Event
+        await listen('file-changed', async (e) => {
+            const changedPath = e.payload;
+            if (changedPath !== currentFilePath) return;
+
+            // 1. Check Latch
+            if (isSaving) {
+                console.log('Ignored file-changed event due to self-save');
+                return;
+            }
+
+            // 2. Check Timestamp (mtime)
+            try {
+                const stats = await stat(currentFilePath);
+                const currentMtime = stats.mtime ? new Date(stats.mtime).getTime() : 0;
+
+                // Allow small drift?
+                if (currentMtime <= lastKnownMtime) {
+                    console.log('Ignored file-changed: mtime not newer', currentMtime, lastKnownMtime);
+                    return;
+                }
+            } catch (err) {
+                console.warn('Failed to stat file during watch event', err);
+            }
+
+            // "Always Reload" preference
+            if (prefs.get('alwaysReload')) {
+                await loadFile(currentFilePath);
+                return;
+            }
+
+            // Prompt using non-blocking UI
+            const currentContent = editor.state.doc.toString();
+            const hasUnsavedChanges = currentContent !== lastSavedContent;
+            reloadPromptUI.show(changedPath, async () => {
+                await loadFile(currentFilePath);
+            }, hasUnsavedChanges);
         });
 
         // Drag & Drop Events (Tauri v2)
@@ -518,14 +688,32 @@ function showRecentFilesModal() {
     document.body.appendChild(modalOverlay);
 }
 
+async function startWatching(path) {
+    try {
+        await invoke('watch_file', { path });
+    } catch (e) {
+        console.error("Failed to start watcher", e);
+    }
+}
+
 async function loadFile(path) {
     try {
         const content = await readTextFile(path);
         currentFilePath = path;
+        lastSavedContent = content; // Sync reference to prevent loop
 
         // Update Title first (fail-safe)
         await setWindowTitle(path);
         addToRecent(path);
+
+        // Update Modified Time
+        try {
+            const stats = await stat(path);
+            lastKnownMtime = stats.mtime ? new Date(stats.mtime).getTime() : Date.now();
+        } catch (e) { console.warn("Stat failed on load", e); }
+
+        await startWatching(path);
+
 
         // Update Editor
         editor.dispatch({
@@ -570,13 +758,33 @@ async function saveFile(saveAs = false) {
 
     // Save
     try {
+        isSaving = true;
         await writeTextFile(currentFilePath, content);
+        lastSavedContent = content;
         console.log('Saved to', currentFilePath);
+
+        // Update mtime immediately after save to avoid race
+        try {
+            const stats = await stat(currentFilePath);
+            lastKnownMtime = stats.mtime ? new Date(stats.mtime).getTime() : Date.now();
+        } catch (e) { }
+
         addToRecent(currentFilePath);
+        // Only start watcher if not watching? 
+        // We are already watching if currentFilePath set.
+        // await startWatching(currentFilePath); // Redundant if already watching? 
+        // It's safer to ensure it.
+        await startWatching(currentFilePath);
+
         // Force render update
         worker.postMessage(content);
     } catch (err) {
         console.error('Failed to save:', err);
+    } finally {
+        // Release latch after short delay to catch trailing events
+        setTimeout(() => {
+            isSaving = false;
+        }, 500);
     }
 }
 

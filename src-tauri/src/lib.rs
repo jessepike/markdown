@@ -1,10 +1,11 @@
+use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use std::sync::Mutex;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::Emitter;
-
-use std::sync::Mutex;
-use tauri::{Manager, State};
+use tauri::{AppHandle, Manager, State};
 
 struct LaunchFile(Mutex<Option<String>>);
+struct FileWatcher(Mutex<Option<RecommendedWatcher>>);
 
 #[tauri::command]
 fn get_launch_file(state: State<LaunchFile>) -> Option<String> {
@@ -12,11 +13,52 @@ fn get_launch_file(state: State<LaunchFile>) -> Option<String> {
     file.take()
 }
 
+#[tauri::command]
+fn watch_file(app: AppHandle, state: State<'_, FileWatcher>, path: String) -> Result<(), String> {
+    let mut watcher_lock = state.0.lock().map_err(|e| e.to_string())?;
+
+    // Stop existing watcher simply by dropping it (setting to None)
+    *watcher_lock = None;
+
+    if path.is_empty() {
+        return Ok(());
+    }
+
+    let path_str = path.clone();
+    let app_handle = app.clone();
+
+    let mut watcher =
+        notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
+            match res {
+                Ok(_event) => {
+                    // Simple debounce or check kind?
+                    // For now, any event on the file triggers reload prompt
+                    // Ideally filter for Modify(Data) or Rename(To)
+                    // But let's just emit and let frontend debounce/handle
+                    let _ = app_handle.emit("file-changed", path_str.clone());
+                }
+                Err(e) => println!("watch error: {:?}", e),
+            }
+        })
+        .map_err(|e| e.to_string())?;
+
+    let p = std::path::Path::new(&path);
+    if p.exists() {
+        watcher
+            .watch(p, RecursiveMode::NonRecursive)
+            .map_err(|e| e.to_string())?;
+        *watcher_lock = Some(watcher);
+    }
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .manage(LaunchFile(Mutex::new(None)))
+        .manage(FileWatcher(Mutex::new(None)))
         .setup(|app| {
             let new_i = MenuItem::with_id(app, "new", "&New File", true, Some("CmdOrCtrl+N"))?;
             let open_i = MenuItem::with_id(app, "open", "&Open", true, Some("CmdOrCtrl+O"))?;
@@ -48,6 +90,31 @@ pub fn run() {
                 .checked(true) // Default to true
                 .build(app)?;
 
+            let prefs_i = MenuItem::with_id(
+                app,
+                "preferences",
+                "Preferences...",
+                true,
+                Some("CmdOrCtrl+,"),
+            )?;
+
+            let app_menu = Submenu::with_items(
+                app,
+                "App",
+                true,
+                &[
+                    &PredefinedMenuItem::about(app, None, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &prefs_i,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::hide(app, None)?,
+                    &PredefinedMenuItem::hide_others(app, None)?,
+                    &PredefinedMenuItem::show_all(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::quit(app, None)?,
+                ],
+            )?;
+
             let file_menu = Submenu::with_items(
                 app,
                 "File",
@@ -67,6 +134,7 @@ pub fn run() {
             let menu = Menu::with_items(
                 app,
                 &[
+                    &app_menu,
                     &file_menu,
                     // Add default standard menus for macOS to ensure standard behavior (Copy/Paste etc)
                     &Submenu::with_items(
@@ -79,8 +147,23 @@ pub fn run() {
                             &PredefinedMenuItem::separator(app)?,
                             &PredefinedMenuItem::cut(app, None)?,
                             &PredefinedMenuItem::copy(app, None)?,
+                            &MenuItem::with_id(
+                                app,
+                                "copy_llm",
+                                "Copy for LLM",
+                                true,
+                                Some("CmdOrCtrl+Shift+C"),
+                            )?,
                             &PredefinedMenuItem::paste(app, None)?,
                             &PredefinedMenuItem::select_all(app, None)?,
+                            &PredefinedMenuItem::separator(app)?,
+                            &MenuItem::with_id(
+                                app,
+                                "normalize",
+                                "Normalize",
+                                true,
+                                Some("CmdOrCtrl+Shift+N"),
+                            )?,
                         ],
                     )?,
                     &Submenu::with_items(
@@ -126,6 +209,12 @@ pub fn run() {
                 } else if event.id() == render_fm_i.id() {
                     let is_checked = render_fm_i.is_checked().unwrap_or(true);
                     app_handle.emit("toggle-frontmatter", is_checked).unwrap();
+                } else if event.id() == prefs_i.id() {
+                    app_handle.emit("menu-preferences", ()).unwrap();
+                } else if event.id() == "normalize" {
+                    app_handle.emit("menu-normalize", ()).unwrap();
+                } else if event.id() == "copy_llm" {
+                    app_handle.emit("menu-copy-llm", ()).unwrap();
                 }
             });
 
@@ -148,7 +237,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![get_launch_file])
+        .invoke_handler(tauri::generate_handler![get_launch_file, watch_file])
         .build(tauri::generate_context!())
         .expect("error while running tauri application");
 

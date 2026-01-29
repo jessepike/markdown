@@ -31,7 +31,15 @@ const zedTheme = EditorView.theme({
     }
 }, { dark: true });
 
-export function createEditor(parent, initialContent, onChange) {
+export function createEditor(parent, initialContent, onChange, onCursorChange, onPaste) {
+    const pasteHandler = onPaste ? EditorView.domEventHandlers({
+        paste(event, view) {
+            // Let the paste land first, then notify
+            if (onPaste) setTimeout(() => onPaste(view), 0);
+            return false; // Don't prevent default paste behavior
+        }
+    }) : [];
+
     const startState = EditorState.create({
         doc: initialContent,
         extensions: [
@@ -39,9 +47,17 @@ export function createEditor(parent, initialContent, onChange) {
             markdown(),
             zedTheme,
             placeholder("Start typing..."),
+            pasteHandler,
             EditorView.updateListener.of((update) => {
                 if (update.docChanged) {
                     onChange(update.state.doc.toString());
+                }
+                if (onCursorChange && (update.docChanged || update.selectionSet)) {
+                    const state = update.state;
+                    const range = state.selection.main;
+                    const line = state.doc.lineAt(range.head);
+                    // Col is 1-indexed for display
+                    onCursorChange(line.number, range.head - line.from + 1);
                 }
             })
         ]

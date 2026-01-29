@@ -17,6 +17,12 @@
       "allow": [
         {
           "path": "$HOME/**"
+        },
+        {
+          "path": "$HOME/.*"
+        },
+        {
+          "path": "$HOME/.*/**"
         }
       ]
     },
@@ -25,6 +31,12 @@
       "allow": [
         {
           "path": "$HOME/**"
+        },
+        {
+          "path": "$HOME/.*"
+        },
+        {
+          "path": "$HOME/.*/**"
         }
       ]
     },
