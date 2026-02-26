@@ -1,16 +1,22 @@
 import './style.css';
-import { createEditor } from './editor.js';
+import { createEditor, toggleSearch, setEditorTheme } from './editor.js';
 import DOMPurify from 'dompurify';
-import { readTextFile, writeTextFile, stat } from '@tauri-apps/plugin-fs';
+import { readTextFile, writeTextFile, stat, mkdir, writeFile, exists } from '@tauri-apps/plugin-fs';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { appConfigDir, join } from '@tauri-apps/api/path';
 import { prefs } from './preferences.js';
 import { prefsUI } from './preferences-ui.js';
 import { statusBar } from './status-bar.js';
 import { normalizationUI } from './normalization-ui.js';
 import { reloadPromptUI } from './reload-prompt-ui.js';
+import { Sidebar } from './sidebar.js';
+import { tabs } from './tabs.js';
+import { exportToDocx } from './docx-export.js';
+import { showOnboarding } from './onboarding.js';
+import { clipboardShelf } from './clipboard-shelf.js';
 
 const RECENT_FILES_KEY = 'pike-recent-files';
 const SPLIT_RATIO_KEY = 'pike-split-ratio';
@@ -18,6 +24,9 @@ const VIEW_MODE_KEY = 'pike-view-mode';
 const SYNC_SCROLL_KEY = 'pike-sync-scroll';
 const RENDER_FM_KEY = 'pike-render-fm';
 const MAX_RECENT_FILES = 10;
+const UNTITLED_TITLE = 'Untitled';
+const SCRATCH_TAB_PATH = 'scratch://untitled';
+const SCRATCH_FILE = 'scratchpad.md';
 
 // Helper function to set window title using Tauri API
 async function setWindowTitle(title) {
@@ -36,20 +45,170 @@ async function setWindowTitle(title) {
 let viewMode = 'editor';
 let isSyncScrollEnabled = localStorage.getItem(SYNC_SCROLL_KEY) !== 'false';
 let isRenderFmEnabled = localStorage.getItem(RENDER_FM_KEY) !== 'false';
+
 let currentFilePath = null;
+let openDocuments = new Map(); // path -> { content: string, lastSavedContent: string, isDirty: boolean }
 let debounceTimer = null;
 let isPreviewPaused = false;
 let isSaving = false; // Latch to prevent self-triggering watcher
 let lastSavedContent = ''; // Debounce self-edits
 let lastKnownMtime = 0;
+let scratchStoragePath = null;
+let scratchPersistTimer = null;
 
-console.log('Pike Markdown: Main script initializing...');
+function isScratchpadPath(path) {
+    return path === SCRATCH_TAB_PATH;
+}
+
+async function getScratchStoragePath() {
+    if (scratchStoragePath) return scratchStoragePath;
+    const configDir = await appConfigDir();
+    if (!(await exists(configDir))) {
+        await mkdir(configDir, { recursive: true });
+    }
+    scratchStoragePath = await join(configDir, SCRATCH_FILE);
+    return scratchStoragePath;
+}
+
+async function loadScratchpadContent() {
+    try {
+        const scratchPath = await getScratchStoragePath();
+        if (!(await exists(scratchPath))) return '';
+        return await readTextFile(scratchPath);
+    } catch (err) {
+        console.error('Failed to load scratchpad:', err);
+        return '';
+    }
+}
+
+async function persistScratchpad(content, immediate = false) {
+    const write = async () => {
+        try {
+            const scratchPath = await getScratchStoragePath();
+            await writeTextFile(scratchPath, content);
+            const scratchDoc = openDocuments.get(SCRATCH_TAB_PATH);
+            if (scratchDoc) {
+                scratchDoc.lastSavedContent = content;
+                scratchDoc.isDirty = false;
+                tabs.setDirty(SCRATCH_TAB_PATH, false);
+            }
+            if (currentFilePath === SCRATCH_TAB_PATH) {
+                lastSavedContent = content;
+            }
+        } catch (err) {
+            console.error('Failed to persist scratchpad:', err);
+        }
+    };
+
+    if (immediate) {
+        if (scratchPersistTimer) clearTimeout(scratchPersistTimer);
+        scratchPersistTimer = null;
+        await write();
+        return;
+    }
+
+    if (scratchPersistTimer) clearTimeout(scratchPersistTimer);
+    scratchPersistTimer = setTimeout(() => {
+        scratchPersistTimer = null;
+        write();
+    }, 400);
+}
+
+async function ensureScratchpadTab() {
+    if (!openDocuments.has(SCRATCH_TAB_PATH)) {
+        const content = await loadScratchpadContent();
+        openDocuments.set(SCRATCH_TAB_PATH, {
+            content,
+            lastSavedContent: content,
+            isDirty: false
+        });
+    }
+
+    tabs.addTab(SCRATCH_TAB_PATH, { name: 'Scratchpad', closable: false, activate: false });
+    tabs.setDirty(SCRATCH_TAB_PATH, false);
+}
+
+function postRenderUpdate(content) {
+    worker.postMessage({
+        content,
+        options: { renderFrontmatter: isRenderFmEnabled }
+    });
+}
+
+function getCurrentContent() {
+    return editor.state.doc.toString();
+}
+
+function getActiveDocument() {
+    if (!currentFilePath) return null;
+    return openDocuments.get(currentFilePath) || null;
+}
+
+function updateDirtyState(content) {
+    if (!currentFilePath) return;
+    const doc = openDocuments.get(currentFilePath);
+    if (!doc) return;
+
+    doc.content = content;
+    doc.isDirty = content !== doc.lastSavedContent;
+    tabs.setDirty(currentFilePath, doc.isDirty);
+}
+
+function markCurrentDocumentSaved(content) {
+    if (!currentFilePath) return;
+    const doc = openDocuments.get(currentFilePath);
+    if (!doc) return;
+
+    doc.content = content;
+    doc.lastSavedContent = content;
+    doc.isDirty = false;
+    tabs.setDirty(currentFilePath, false);
+}
+
+function hasUnsavedChanges() {
+    const content = getCurrentContent();
+
+    if (currentFilePath) {
+        const doc = openDocuments.get(currentFilePath);
+        if (doc) return doc.isDirty;
+        return content !== lastSavedContent;
+    }
+
+    // Scratch/untitled state with no path yet.
+    return content.trim().length > 0;
+}
+
+async function ensureCanDiscardUnsavedChanges(actionLabel = 'continue') {
+    if (!hasUnsavedChanges()) return true;
+    return confirm(`You have unsaved changes. Discard them and ${actionLabel}?`);
+}
+
+async function openPathWithUnsavedCheck(path, actionLabel = 'open another file') {
+    if (!(await ensureCanDiscardUnsavedChanges(actionLabel))) return false;
+    await loadFile(path);
+    return true;
+}
+
+async function addSelectionToShelf() {
+    const sel = editor.state.selection.main;
+    if (sel.from === sel.to) {
+        alert('Select text to add to clipboard shelf.');
+        return;
+    }
+    const selectedText = editor.state.doc.sliceString(sel.from, sel.to);
+    await clipboardShelf.addText(selectedText, 'selection');
+}
+
+console.log('AgentPad: Main script initializing...');
 
 // GLOBAL ERROR HANDLER
 window.onerror = function (message, source, lineno, colno, error) {
     console.error('Global Error Caught:', message, error);
     alert(`App Error: ${message}`);
 };
+
+// Initialize with a stable native title bar label until a file/folder is opened
+setWindowTitle("AgentPad");
 
 // Initialize Preferences
 (async () => {
@@ -96,6 +255,10 @@ const app = document.getElementById('app');
 
 const editorContainer = document.createElement('div');
 editorContainer.className = 'editor-pane';
+
+// Init Tabs
+tabs.init(editorContainer, (path) => switchTab(path), (path) => closeTab(path));
+
 const previewContainer = document.createElement('div');
 previewContainer.className = 'preview-pane single-mode';
 const markdownBody = document.createElement('div');
@@ -105,6 +268,24 @@ previewContainer.appendChild(markdownBody);
 const resizer = document.createElement('div');
 resizer.className = 'resizer';
 
+// Sidebar
+const sidebarContainer = document.createElement('div');
+sidebarContainer.className = 'sidebar-pane';
+
+const sidebarDragHandle = document.createElement('div');
+sidebarDragHandle.className = 'sidebar-drag-handle';
+sidebarDragHandle.setAttribute('data-tauri-drag-region', 'true');
+sidebarContainer.appendChild(sidebarDragHandle);
+
+// Hide sidebar by default until a folder is opened
+sidebarContainer.style.display = 'none';
+
+const sidebarResizer = document.createElement('div');
+sidebarResizer.className = 'sidebar-resizer';
+sidebarResizer.style.display = 'none';
+
+app.appendChild(sidebarContainer);
+app.appendChild(sidebarResizer);
 app.appendChild(editorContainer);
 app.appendChild(resizer);
 app.appendChild(previewContainer);
@@ -155,8 +336,10 @@ document.addEventListener('mouseup', () => {
         localStorage.setItem(SPLIT_RATIO_KEY, percentage.toFixed(2));
     }
 });
+// Editor Resizer Logic
 const controls = document.createElement('div');
 controls.className = 'controls';
+controls.setAttribute('data-tauri-drag-region', 'false');
 // ... rest of DOM setup matches previous flow, but now listeners are safe.
 
 // Open Button
@@ -180,10 +363,17 @@ codeBtn.className = 'btn icon-btn';
 codeBtn.onclick = () => setViewMode(VIEW_MODES.EDITOR);
 codeBtn.title = 'Raw View (Cmd+E)';
 
+const shelfBtn = document.createElement('button');
+shelfBtn.textContent = 'Shelf';
+shelfBtn.className = 'btn';
+shelfBtn.title = 'Toggle Clipboard Shelf (Cmd+Shift+K)';
+shelfBtn.onclick = () => clipboardShelf.toggle();
+
 controls.appendChild(openBtn);
 controls.appendChild(codeBtn);
 controls.appendChild(previewBtn);
-app.appendChild(controls);
+controls.appendChild(shelfBtn);
+editorContainer.appendChild(controls);
 
 // State (moved to top)
 const VIEW_MODES = {
@@ -227,7 +417,7 @@ const tokenWorker = new Worker(new URL('./token.worker.js', import.meta.url), {
 
 tokenWorker.onmessage = (e) => {
     if (e.data.count !== undefined) {
-        statusBar.updateTokens(e.data.count);
+        statusBar.updateTokens(e.data.count, e.data.words);
     } else if (e.data.error) {
         console.error(`Token Worker Error: ${e.data.error}`);
     }
@@ -236,7 +426,7 @@ tokenWorker.onmessage = (e) => {
 // Auto-save Logic
 // Auto-save Logic
 async function performAutoSave(content) {
-    if (currentFilePath) {
+    if (currentFilePath && !isScratchpadPath(currentFilePath)) {
         try {
             isSaving = true;
             await writeTextFile(currentFilePath, content);
@@ -250,6 +440,7 @@ async function performAutoSave(content) {
 
             // Sync reference
             lastSavedContent = content;
+            markCurrentDocumentSaved(content);
 
         } catch (err) {
             console.error('Auto-save failed:', err);
@@ -264,68 +455,110 @@ async function performAutoSave(content) {
 // Editor Setup
 const editor = createEditor(editorContainer, "", (newContent) => {
     const contentLength = newContent.length;
+    const isHugeDocument = contentLength > THRESHOLD_HUGE;
+
+    updateDirtyState(newContent);
 
     // Adaptive Logic
-    if (contentLength > THRESHOLD_HUGE) {
-        // Paused Mode
-        if (!isPreviewPaused) {
-            isPreviewPaused = true;
-            pausedIndicator.classList.add('visible');
-        }
-    } else {
-        // Active Mode
-        if (isPreviewPaused) {
-            isPreviewPaused = false;
-            pausedIndicator.classList.remove('visible');
-        }
-
-        const delay = contentLength > THRESHOLD_LARGE ? DEBOUNCE_SLOW : DEBOUNCE_NORMAL;
-
-        if (debounceTimer) clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => {
-            // 1. Update Preview (if visible)
-            if (viewMode !== VIEW_MODES.EDITOR) {
-                worker.postMessage({
-                    content: newContent,
-                    options: { renderFrontmatter: isRenderFmEnabled }
-                });
-            }
-
-            // 2. Auto-save (only if changed)
-            if (newContent !== lastSavedContent) {
-                performAutoSave(newContent);
-            }
-
-            // 3. Update Token Count
-            statusBar.updateTokens('...');
-            tokenWorker.postMessage(newContent);
-
-        }, delay);
+    if (isHugeDocument && !isPreviewPaused) {
+        isPreviewPaused = true;
+        pausedIndicator.classList.add('visible');
+    } else if (!isHugeDocument && isPreviewPaused) {
+        isPreviewPaused = false;
+        pausedIndicator.classList.remove('visible');
     }
+
+    const delay = (contentLength > THRESHOLD_LARGE || isHugeDocument) ? DEBOUNCE_SLOW : DEBOUNCE_NORMAL;
+
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+        // Keep preview paused for huge docs, but continue autosave and metrics.
+        if (!isHugeDocument && viewMode !== VIEW_MODES.EDITOR) {
+            postRenderUpdate(newContent);
+        }
+
+        if (isScratchpadPath(currentFilePath) && newContent !== lastSavedContent) {
+            persistScratchpad(newContent);
+        } else if (currentFilePath && newContent !== lastSavedContent) {
+            performAutoSave(newContent);
+        }
+
+        statusBar.updateTokens('...');
+        tokenWorker.postMessage(newContent);
+    }, delay);
 }, (line, col) => {
     statusBar.updateCursor(line, col);
-}, () => {
-    // onPaste: trigger auto-normalization if enabled
-    if (prefs.get('normalizationMode') === 'auto') {
-        const content = editor.state.doc.toString();
-        normalizationUI.showDiff(content, (normalized) => {
-            editor.dispatch({
-                changes: { from: 0, to: editor.state.doc.length, insert: normalized }
-            });
-            performAutoSave(normalized);
-            tokenWorker.postMessage(normalized);
-        });
+}, (event, view) => {
+    // 1. Image Handling
+    const items = event.clipboardData && event.clipboardData.items;
+    let hasImage = false;
+    if (items) {
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf('image') !== -1) {
+                const file = items[i].getAsFile();
+                if (file) {
+                    handleImagePaste(view, file);
+                    hasImage = true;
+                }
+            }
+        }
     }
+
+    if (hasImage) {
+        return true; // Prevent default paste
+    }
+
+    // 2. Auto-normalization (Post-paste)
+    if (prefs.get('normalizationMode') === 'auto') {
+        // We need to wait for the paste to apply to doc before checking?
+        // Or we check the text being pasted?
+        // Existing logic used setTimeout (implicit in previous editor.js).
+        // We must re-implement the delay or check.
+        setTimeout(() => {
+            const content = editor.state.doc.toString();
+            normalizationUI.showDiff(content, (normalized) => {
+                editor.dispatch({
+                    changes: { from: 0, to: editor.state.doc.length, insert: normalized }
+                });
+                performAutoSave(normalized);
+                tokenWorker.postMessage(normalized);
+            });
+        }, 10);
+    }
+
+    return false; // Allow default paste
+}, {
+    spellcheck: prefs.get('spellcheckEnabled'),
+    theme: prefs.get('theme')
 });
 
-// Init Status Bar
-statusBar.init(app);
-
-// Initial Render
-worker.postMessage({
-    content: editor.state.doc.toString(),
-    options: { renderFrontmatter: isRenderFmEnabled }
+// Init// Status Bar
+statusBar.init(document.body, () => {
+    // Sidebar Toggle
+    if (sidebarContainer.style.display === 'none') {
+        sidebarContainer.style.display = 'block';
+        sidebarResizer.style.display = 'block';
+        app.classList.add('has-sidebar');
+    } else {
+        sidebarContainer.style.display = 'none';
+        sidebarResizer.style.display = 'none';
+        app.classList.remove('has-sidebar');
+    }
+}, () => {
+    // Search Toggle
+    toggleSearch(editor);
 });
+
+// Show Onboarding
+showOnboarding();
+
+// Initialize scratchpad + clipboard shelf
+(async () => {
+    await ensureScratchpadTab();
+    await switchTab(SCRATCH_TAB_PATH);
+    await clipboardShelf.init(document.body);
+    postRenderUpdate(editor.state.doc.toString());
+})();
 
 
 // Scroll Logic (Smooth)
@@ -363,6 +596,39 @@ function handleSyncScroll(source, target) {
 editor.scrollDOM.addEventListener('scroll', () => handleSyncScroll(editor.scrollDOM, markdownBody.parentElement));
 previewContainer.addEventListener('scroll', () => handleSyncScroll(markdownBody.parentElement, editor.scrollDOM));
 
+// Sidebar Logic
+const sidebar = new Sidebar(sidebarContainer, async (path) => {
+    await openPathWithUnsavedCheck(path, 'open a file from the sidebar');
+});
+
+// Sidebar Resizer
+let isSidebarResizing = false;
+sidebarResizer.addEventListener('mousedown', (e) => {
+    isSidebarResizing = true;
+    sidebarResizer.classList.add('resizing');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+});
+
+document.addEventListener('mousemove', (e) => {
+    if (isSidebarResizing) {
+        let newWidth = e.clientX;
+        if (newWidth < 150) newWidth = 150; // min width
+        if (newWidth > 400) newWidth = 400; // max width
+        sidebarContainer.style.width = `${newWidth}px`;
+    }
+});
+
+document.addEventListener('mouseup', () => {
+    if (isSidebarResizing) {
+        isSidebarResizing = false;
+        sidebarResizer.classList.remove('resizing');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        // TODO: Save width to prefs
+    }
+});
+
 // -------------------------------------------------------------------------
 // CRITICAL: Tauri Event Listeners (Registered after editor/worker created)
 // -------------------------------------------------------------------------
@@ -378,18 +644,52 @@ previewContainer.addEventListener('scroll', () => handleSyncScroll(markdownBody.
         await listen('menu-save-as', () => saveFile(true));
         await listen('menu-open-recent', () => showRecentFilesModal());
         await listen('menu-close-recent', () => clearRecentFiles());
-        await listen('file-opened-from-launch', (e) => loadFile(e.payload));
+        await listen('file-opened-from-launch', (e) => openPathWithUnsavedCheck(e.payload, 'open the launched file'));
+
+        await listen('menu-open-folder', async () => {
+            try {
+                const selected = await open({
+                    directory: true,
+                    multiple: false
+                });
+
+                if (selected) {
+                    // Open Folder Mode
+                    await sidebar.setRoot(selected);
+
+                    // Show Sidebar
+                    sidebarContainer.style.display = 'block';
+                    sidebarResizer.style.display = 'block';
+                    app.classList.add('has-sidebar');
+
+                    await setWindowTitle(selected); // Folder Name
+                }
+            } catch (err) {
+                console.error("Failed to open folder", err);
+            }
+        });
 
         await listen('menu-new', async () => {
-            currentFilePath = null;
+            if (!(await ensureCanDiscardUnsavedChanges('create a new document'))) return;
+
+            await ensureScratchpadTab();
+            const scratchDoc = openDocuments.get(SCRATCH_TAB_PATH);
+            if (scratchDoc) {
+                scratchDoc.content = '';
+                scratchDoc.lastSavedContent = '';
+                scratchDoc.isDirty = false;
+                tabs.setDirty(SCRATCH_TAB_PATH, false);
+            }
+
+            await switchTab(SCRATCH_TAB_PATH);
             editor.dispatch({
                 changes: { from: 0, to: editor.state.doc.length, insert: "" }
             });
-            worker.postMessage({
-                content: "",
-                options: { renderFrontmatter: isRenderFmEnabled }
-            });
-            await setWindowTitle('Untitled');
+            lastSavedContent = '';
+            currentFilePath = SCRATCH_TAB_PATH;
+            postRenderUpdate('');
+            await persistScratchpad('', true);
+            await setWindowTitle(UNTITLED_TITLE);
         });
 
         await listen('toggle-sync-scroll', (e) => {
@@ -446,7 +746,176 @@ previewContainer.addEventListener('scroll', () => handleSyncScroll(markdownBody.
             }
         });
 
-        // File Watcher Event
+        await listen('menu-copy-rich-text', async () => {
+            try {
+                // 1. Get current HTML
+                // We rely on markdownBody being up to date.
+                // If in editor mode, we might want to force a render properly, 
+                // but usually the worker handles it.
+                // Let's ensure it's up to date with a quick re-render request? 
+                // (Worker is async, so we might read stale data if we just typed).
+                // For now, assume it's "fresh enough" or user is in Preview mode.
+
+                // For now, assume it's "fresh enough" or user is in Preview mode.
+
+                let htmlContent = markdownBody.innerHTML;
+
+                // Sanitization: Strip Frontmatter
+                if (prefs.get('sanitizationStripFrontmatter')) {
+                    const clone = markdownBody.cloneNode(true);
+                    const fm = clone.querySelector('.front-matter');
+                    if (fm) {
+                        fm.remove();
+                        htmlContent = clone.innerHTML;
+                    }
+                }
+
+                // Append Styles if requested (for Rich Text, we usually inline or put in head? 
+                // Clipboard 'text/html' accepts full HTML document with head/body)
+                if (prefs.get('exportIncludeTheme')) {
+                    const style = `
+                        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; }
+                        pre { background: #f6f8fa; padding: 12px; border-radius: 6px; }
+                        code { background: rgba(27,31,35,0.05); padding: 0.2em 0.4em; border-radius: 3px; }
+                        table { border-collapse: collapse; }
+                        th, td { border: 1px solid #dfe2e5; padding: 6px 13px; }
+                        blockquote { border-left: 4px solid #dfe2e5; padding-left: 1em; color: #6a737d; }
+                    `;
+                    // Wrap in full structure for clipboard
+                    htmlContent = `<!DOCTYPE html><html><head><style>${style}</style></head><body>${htmlContent}</body></html>`;
+                }
+
+                const plainText = editor.state.doc.toString();
+
+                const htmlBlob = new Blob([htmlContent], { type: 'text/html' });
+                const textBlob = new Blob([plainText], { type: 'text/plain' });
+
+                await navigator.clipboard.write([
+                    new ClipboardItem({
+                        'text/html': htmlBlob,
+                        'text/plain': textBlob
+                    })
+                ]);
+                alert("Copied as Rich Text!");
+            } catch (err) {
+                console.error("Failed to copy rich text", err);
+                alert("Failed to copy as Rich Text.");
+            }
+        });
+
+        await listen('menu-export-pdf', () => {
+            // Print dialog handles PDF generation
+            window.print();
+        });
+
+        await listen('menu-export-docx', async () => {
+            const content = editor.state.doc.toString();
+            await exportToDocx(content, currentFilePath);
+        });
+
+        const applyTheme = () => {
+            const theme = prefs.get('theme');
+            let isDark = true;
+
+            if (theme === 'system') {
+                isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            } else if (theme === 'light') {
+                isDark = false;
+            } else {
+                isDark = true;
+            }
+
+            if (isDark) {
+                document.body.classList.remove('light-mode');
+            } else {
+                document.body.classList.add('light-mode');
+            }
+
+            if (editor) {
+                setEditorTheme(editor, isDark);
+            }
+        };
+
+        // Theme Listeners
+        await listen('menu-theme-system', async () => {
+            await prefs.set('theme', 'system');
+            applyTheme();
+        });
+        await listen('menu-theme-light', async () => {
+            await prefs.set('theme', 'light');
+            applyTheme();
+        });
+        await listen('menu-theme-dark', async () => {
+            await prefs.set('theme', 'dark');
+            applyTheme();
+        });
+
+        // Initialize Theme
+        applyTheme();
+
+        // System Preference Listener
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+            if (prefs.get('theme') === 'system') applyTheme();
+        });
+
+        await listen('menu-export-html', async () => {
+            try {
+                const selected = await save({
+                    filters: [{ name: 'HTML Document', extensions: ['html'] }]
+                });
+
+                if (!selected) return;
+
+                const title = currentFilePath ? currentFilePath.split('/').pop() : "Untitled";
+
+                let bodyContent = markdownBody.innerHTML;
+
+                // Sanitization: Strip Frontmatter
+                if (prefs.get('sanitizationStripFrontmatter')) {
+                    const clone = markdownBody.cloneNode(true);
+                    const fm = clone.querySelector('.front-matter');
+                    if (fm) {
+                        fm.remove();
+                        bodyContent = clone.innerHTML;
+                    }
+                }
+
+                // Minimal styling for the exported HTML
+                let style = '';
+                if (prefs.get('exportIncludeTheme')) {
+                    style = `
+                    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; line-height: 1.6; padding: 20px; max-width: 800px; margin: 0 auto; color: #24292e; }
+                    pre { background: #f6f8fa; padding: 16px; border-radius: 6px; overflow: auto; }
+                    code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace; background: rgba(27,31,35,0.05); padding: 0.2em 0.4em; border-radius: 3px; }
+                    table { border-collapse: collapse; width: 100%; }
+                    th, td { border: 1px solid #dfe2e5; padding: 6px 13px; }
+                    th { background-color: #f6f8fa; }
+                    blockquote { border-left: 0.25em solid #dfe2e5; color: #6a737d; padding-left: 1em; margin: 0; }
+                    a { color: #0366d6; text-decoration: none; }
+                    a:hover { text-decoration: underline; }
+                `;
+                }
+
+                const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>${title}</title>
+<style>${style}</style>
+</head>
+<body>
+${bodyContent}
+</body>
+</html>`;
+
+                await writeTextFile(selected, html);
+                alert("Exported to HTML successfully!");
+
+            } catch (e) {
+                console.error("Export HTML failed", e);
+                alert("Failed to export HTML.");
+            }
+        });
         // File Watcher Event
         await listen('file-changed', async (e) => {
             const changedPath = e.payload;
@@ -480,7 +949,8 @@ previewContainer.addEventListener('scroll', () => handleSyncScroll(markdownBody.
 
             // Prompt using non-blocking UI
             const currentContent = editor.state.doc.toString();
-            const hasUnsavedChanges = currentContent !== lastSavedContent;
+            const activeDoc = getActiveDocument();
+            const hasUnsavedChanges = activeDoc ? currentContent !== activeDoc.lastSavedContent : currentContent !== lastSavedContent;
             reloadPromptUI.show(changedPath, async () => {
                 await loadFile(currentFilePath);
             }, hasUnsavedChanges);
@@ -499,7 +969,7 @@ previewContainer.addEventListener('scroll', () => handleSyncScroll(markdownBody.
                 const path = paths[0];
                 console.log('Processing dropped file:', path);
                 if (path.endsWith('.md') || path.endsWith('.markdown') || path.endsWith('.txt')) {
-                    await loadFile(path);
+                    await openPathWithUnsavedCheck(path, 'open the dropped file');
                 } else {
                     alert("File type not supported. Please drop a .md, .markdown, or .txt file.");
                 }
@@ -522,7 +992,7 @@ previewContainer.addEventListener('scroll', () => handleSyncScroll(markdownBody.
         const launchPath = await invoke('get_launch_file');
         if (launchPath) {
             console.log('Opening launch file:', launchPath);
-            await loadFile(launchPath);
+            await openPathWithUnsavedCheck(launchPath, 'open the launch file');
         } else {
             // Set default title if no file loaded
             await setWindowTitle('Untitled');
@@ -573,10 +1043,7 @@ function setViewMode(mode) {
             previewContainer.classList.add('visible');
             previewBtn.classList.add('active');
             // Force render on enter split
-            worker.postMessage({
-                content: editor.state.doc.toString(),
-                options: { renderFrontmatter: isRenderFmEnabled }
-            });
+            postRenderUpdate(editor.state.doc.toString());
             editor.focus();
             break;
         case VIEW_MODES.PREVIEW:
@@ -586,20 +1053,14 @@ function setViewMode(mode) {
             previewContainer.classList.add('visible', 'single-mode');
             previewBtn.classList.add('active');
             // Force render on enter preview
-            worker.postMessage({
-                content: editor.state.doc.toString(),
-                options: { renderFrontmatter: isRenderFmEnabled }
-            });
+            postRenderUpdate(editor.state.doc.toString());
             break;
     }
 }
 
 function forceRefresh() {
     const content = editor.state.doc.toString();
-    worker.postMessage({
-        content: content,
-        options: { renderFrontmatter: isRenderFmEnabled }
-    });
+    postRenderUpdate(content);
     // Also trigger save if huge
     performAutoSave(content);
 }
@@ -608,7 +1069,8 @@ function forceRefresh() {
 function getRecentFiles() {
     try {
         const stored = localStorage.getItem(RECENT_FILES_KEY);
-        return stored ? JSON.parse(stored) : [];
+        const parsed = stored ? JSON.parse(stored) : [];
+        return parsed.filter(path => !isScratchpadPath(path));
     } catch {
         return [];
     }
@@ -670,7 +1132,7 @@ function showRecentFilesModal() {
         li.textContent = path;
         li.onclick = async () => {
             modalOverlay.remove();
-            await loadFile(path);
+            await openPathWithUnsavedCheck(path, 'open a recent file');
         };
         list.appendChild(li);
     });
@@ -696,40 +1158,133 @@ async function startWatching(path) {
     }
 }
 
-async function loadFile(path) {
-    try {
-        const content = await readTextFile(path);
+// --- Tab Management ---
+
+async function switchTab(path) {
+    if (path === currentFilePath) return;
+
+    // Save current state if we have a file open
+    if (currentFilePath && openDocuments.has(currentFilePath)) {
+        const doc = openDocuments.get(currentFilePath);
+        const currentContent = editor.state.doc.toString();
+        doc.content = currentContent;
+        doc.isDirty = currentContent !== doc.lastSavedContent;
+        tabs.setDirty(currentFilePath, doc.isDirty);
+        // doc.scrollTop = ... (CodeMirror scroll state is complex, omit for MVP)
+    }
+
+    // Load new state
+    if (openDocuments.has(path)) {
         currentFilePath = path;
-        lastSavedContent = content; // Sync reference to prevent loop
-
-        // Update Title first (fail-safe)
-        await setWindowTitle(path);
-        addToRecent(path);
-
-        // Update Modified Time
-        try {
-            const stats = await stat(path);
-            lastKnownMtime = stats.mtime ? new Date(stats.mtime).getTime() : Date.now();
-        } catch (e) { console.warn("Stat failed on load", e); }
-
-        await startWatching(path);
-
+        tabs.setActive(path);
+        const doc = openDocuments.get(path);
 
         // Update Editor
         editor.dispatch({
+            changes: { from: 0, to: editor.state.doc.length, insert: doc.content }
+        });
+        lastSavedContent = doc.lastSavedContent;
+        tabs.setDirty(path, doc.isDirty);
+
+        // Update Title
+        await setWindowTitle(isScratchpadPath(path) ? 'Scratchpad' : path);
+
+        // Add to recent
+        if (!isScratchpadPath(path)) {
+            addToRecent(path);
+        }
+    }
+}
+
+async function closeTab(path) {
+    if (isScratchpadPath(path)) return;
+
+    const doc = openDocuments.get(path);
+    if (doc && doc.isDirty) {
+        const discard = confirm('This tab has unsaved changes. Close without saving?');
+        if (!discard) {
+            await switchTab(path);
+            const saved = await saveFile();
+            if (!saved) return;
+        }
+    }
+
+    tabs.removeTab(path);
+    openDocuments.delete(path);
+
+    if (path === currentFilePath) {
+        currentFilePath = null;
+        // Switch to last tab or clear editor
+        const remaining = tabs.getTabs();
+        if (remaining.length > 0) {
+            await switchTab(remaining[remaining.length - 1].path);
+        } else {
+            // Clear editor
+            editor.dispatch({
+                changes: { from: 0, to: editor.state.doc.length, insert: '' }
+            });
+            lastSavedContent = '';
+            await setWindowTitle('AgentPad');
+        }
+    }
+}
+
+async function loadFile(path) {
+    try {
+        // If already open, just switch
+        if (openDocuments.has(path)) {
+            await switchTab(path);
+            return;
+        }
+
+        const content = await readTextFile(path);
+
+        // Add to state
+        openDocuments.set(path, {
+            content: content,
+            lastSavedContent: content,
+            isDirty: false
+        });
+
+        // Save previous state before switching
+        if (currentFilePath && openDocuments.has(currentFilePath)) {
+            const doc = openDocuments.get(currentFilePath);
+            const currentContent = editor.state.doc.toString();
+            doc.content = currentContent;
+            doc.isDirty = currentContent !== doc.lastSavedContent;
+            tabs.setDirty(currentFilePath, doc.isDirty);
+        }
+
+        currentFilePath = path;
+        tabs.addTab(path);
+
+        editor.dispatch({
             changes: { from: 0, to: editor.state.doc.length, insert: content }
         });
-        // Update Preview immediately
-        worker.postMessage(content);
+
+        // Initialize lastSavedContent
+        lastSavedContent = content;
+        tabs.setDirty(path, false);
+
+        await setWindowTitle(path);
+
+        // Add to recent files
+        addToRecent(path);
+
+        // Start watcher
+        await startWatching(path);
+
     } catch (err) {
         console.error('Failed to load file:', err);
-        alert(`Failed to open file: ${path}`);
+        alert('Failed to load file: ' + err);
     }
 }
 
 // File Operations
 async function openFile() {
     try {
+        if (!(await ensureCanDiscardUnsavedChanges('open another file'))) return;
+
         const selected = await open({
             filters: [{ name: 'Markdown', extensions: ['md', 'markdown'] }]
         });
@@ -743,16 +1298,56 @@ async function openFile() {
 
 async function saveFile(saveAs = false) {
     const content = editor.state.doc.toString();
-    if (!currentFilePath || saveAs) {
+    const savingScratch = isScratchpadPath(currentFilePath);
+
+    if (!currentFilePath || saveAs || savingScratch) {
         // Save As
         const selected = await save({
             filters: [{ name: 'Markdown', extensions: ['md'] }]
         });
         if (selected) {
+            if (savingScratch) {
+                try {
+                    await persistScratchpad(content, true);
+                    await writeTextFile(selected, content);
+                    addToRecent(selected);
+
+                    openDocuments.set(selected, {
+                        content,
+                        lastSavedContent: content,
+                        isDirty: false
+                    });
+                    tabs.addTab(selected);
+                    tabs.setDirty(selected, false);
+                    await switchTab(selected);
+                    await ensureScratchpadTab();
+                    return true;
+                } catch (err) {
+                    console.error('Failed to save scratchpad as file:', err);
+                    return false;
+                }
+            }
+
+            const previousPath = currentFilePath;
             currentFilePath = selected;
             await setWindowTitle(currentFilePath);
+
+            if (previousPath && previousPath !== currentFilePath && openDocuments.has(previousPath)) {
+                const previousDoc = openDocuments.get(previousPath);
+                openDocuments.delete(previousPath);
+                openDocuments.set(currentFilePath, previousDoc);
+                tabs.removeTab(previousPath);
+                tabs.addTab(currentFilePath);
+            } else if (!openDocuments.has(currentFilePath)) {
+                openDocuments.set(currentFilePath, {
+                    content,
+                    lastSavedContent: content,
+                    isDirty: false
+                });
+                tabs.addTab(currentFilePath);
+            }
         } else {
-            return; // Cancelled
+            return false; // Cancelled
         }
     }
 
@@ -761,6 +1356,7 @@ async function saveFile(saveAs = false) {
         isSaving = true;
         await writeTextFile(currentFilePath, content);
         lastSavedContent = content;
+        markCurrentDocumentSaved(content);
         console.log('Saved to', currentFilePath);
 
         // Update mtime immediately after save to avoid race
@@ -777,9 +1373,11 @@ async function saveFile(saveAs = false) {
         await startWatching(currentFilePath);
 
         // Force render update
-        worker.postMessage(content);
+        postRenderUpdate(content);
+        return true;
     } catch (err) {
         console.error('Failed to save:', err);
+        return false;
     } finally {
         // Release latch after short delay to catch trailing events
         setTimeout(() => {
@@ -789,10 +1387,72 @@ async function saveFile(saveAs = false) {
 }
 
 // Shortcuts
+// Image Paste Handling
+async function handleImagePaste(view, file) {
+    try {
+        if (!currentFilePath) {
+            alert('Please save the current file before pasting images.');
+            return;
+        }
+
+        // Determine destination
+        // We'll put it in an 'assets' folder relative to the current file
+        // 1. Get current file dir
+        // Simple string manipulation for now (Node/Rust path is better, but this works for MVP)
+        const pathSep = navigator.userAgent.includes('Win') ? '\\' : '/';
+        const fileDir = currentFilePath.substring(0, currentFilePath.lastIndexOf(pathSep));
+        const assetsDir = `${fileDir}${pathSep}assets`;
+
+        // 2. Ensure assets dir exists
+        try {
+            await mkdir(assetsDir, { recursive: true });
+        } catch (e) {
+            // Ignore if exists, how to check? 
+            // writeBinaryFile might fail if dir missing?
+            // Actually, we should check existence. 
+            // Let's just try to create. 
+        }
+
+        // 3. Generate filename
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const filename = `image-${timestamp}.png`;
+        const fullPath = `${assetsDir}${pathSep}${filename}`;
+
+        // 4. Read data
+        const buffer = await file.arrayBuffer();
+        const uint8Array = new Uint8Array(buffer);
+
+        // 5. Write file
+        await writeFile(fullPath, uint8Array);
+
+        // 6. Insert Markdown
+        // Relative path validation: 'assets/filename.png'
+        const relativePath = `assets/${filename}`;
+
+        view.dispatch(view.state.replaceSelection(`![Image](${relativePath})`));
+
+    } catch (err) {
+        console.error('Image paste failed:', err);
+        alert('Failed to paste image: ' + err);
+    }
+}
+
+window.addEventListener('beforeunload', (event) => {
+    if (!hasUnsavedChanges()) return;
+    event.preventDefault();
+    event.returnValue = '';
+});
+
 window.addEventListener('keydown', (e) => {
     const cmd = e.metaKey || e.ctrlKey;
 
     if (cmd) {
+        if (e.shiftKey && e.code === 'Space') {
+            e.preventDefault();
+            ensureScratchpadTab().then(() => switchTab(SCRATCH_TAB_PATH));
+            return;
+        }
+
         switch (e.key.toLowerCase()) {
             case 'p':
                 e.preventDefault();
@@ -810,9 +1470,26 @@ window.addEventListener('keydown', (e) => {
                 e.preventDefault();
                 forceRefresh();
                 break;
+            case 'k':
+                if (e.shiftKey) {
+                    e.preventDefault();
+                    clipboardShelf.toggle();
+                }
+                break;
+            case 'v':
+                if (e.shiftKey) {
+                    e.preventDefault();
+                    clipboardShelf.addFromClipboard();
+                }
+                break;
+            case 'y':
+                if (e.shiftKey) {
+                    e.preventDefault();
+                    addSelectionToShelf();
+                }
+                break;
         }
     }
 });
 
 // Redundant listeners removed
-

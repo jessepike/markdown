@@ -1,8 +1,16 @@
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use std::fs;
 use std::sync::Mutex;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::Emitter;
 use tauri::{AppHandle, Manager, State};
+
+#[derive(serde::Serialize)]
+struct FileEntry {
+    name: String,
+    path: String,
+    is_dir: bool,
+}
 
 struct LaunchFile(Mutex<Option<String>>);
 struct FileWatcher(Mutex<Option<RecommendedWatcher>>);
@@ -53,6 +61,37 @@ fn watch_file(app: AppHandle, state: State<'_, FileWatcher>, path: String) -> Re
     Ok(())
 }
 
+#[tauri::command]
+fn read_dir(path: String) -> Result<Vec<FileEntry>, String> {
+    let mut entries = Vec::new();
+    let paths = fs::read_dir(path).map_err(|e| e.to_string())?;
+
+    for path in paths {
+        let path = path.map_err(|e| e.to_string())?;
+        let file_type = path.file_type().map_err(|e| e.to_string())?;
+        let entry = FileEntry {
+            name: path.file_name().to_string_lossy().to_string(),
+            path: path.path().to_string_lossy().to_string(),
+            is_dir: file_type.is_dir(),
+        };
+        // Filter hidden files? For now, include everything except .DS_Store maybe?
+        if entry.name != ".DS_Store" {
+            entries.push(entry);
+        }
+    }
+
+    // Sort: Directories first, then files
+    entries.sort_by(|a, b| {
+        if a.is_dir == b.is_dir {
+            a.name.to_lowercase().cmp(&b.name.to_lowercase())
+        } else {
+            b.is_dir.cmp(&a.is_dir)
+        }
+    });
+
+    Ok(entries)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -80,6 +119,30 @@ pub fn run() {
                 None::<&str>,
             )?;
 
+            let open_folder_i = MenuItem::with_id(
+                app,
+                "open_folder",
+                "Open &Folder...",
+                true,
+                Some("CmdOrCtrl+Shift+O"),
+            )?;
+
+            let export_html_i =
+                MenuItem::with_id(app, "export_html", "Export to &HTML...", true, None::<&str>)?;
+
+            let export_pdf_i =
+                MenuItem::with_id(app, "export_pdf", "Export to &PDF...", true, None::<&str>)?;
+
+            let export_docx_i =
+                MenuItem::with_id(app, "export_docx", "Export to &DOCX...", true, None::<&str>)?;
+
+            let export_menu = Submenu::with_items(
+                app,
+                "Export",
+                true,
+                &[&export_html_i, &export_pdf_i, &export_docx_i],
+            )?;
+
             let sync_scroll_i = tauri::menu::CheckMenuItemBuilder::new("Synchronized Scrolling")
                 .id("sync_scroll")
                 .checked(true) // Default to true
@@ -89,6 +152,19 @@ pub fn run() {
                 .id("render_fm")
                 .checked(true) // Default to true
                 .build(app)?;
+
+            // Theme Items
+            let theme_system_i =
+                MenuItem::with_id(app, "theme_system", "System", true, None::<&str>)?;
+            let theme_light_i = MenuItem::with_id(app, "theme_light", "Light", true, None::<&str>)?;
+            let theme_dark_i = MenuItem::with_id(app, "theme_dark", "Dark", true, None::<&str>)?;
+
+            let theme_menu = Submenu::with_items(
+                app,
+                "Theme",
+                true,
+                &[&theme_system_i, &theme_light_i, &theme_dark_i],
+            )?;
 
             let prefs_i = MenuItem::with_id(
                 app,
@@ -100,7 +176,7 @@ pub fn run() {
 
             let app_menu = Submenu::with_items(
                 app,
-                "App",
+                "AgentPad",
                 true,
                 &[
                     &PredefinedMenuItem::about(app, None, None)?,
@@ -122,12 +198,15 @@ pub fn run() {
                 &[
                     &new_i,
                     &open_i,
+                    &open_folder_i,
                     &open_recent_i,
                     &close_recent_i,
                     &PredefinedMenuItem::separator(app)?,
                     &PredefinedMenuItem::close_window(app, Some("Close"))?,
                     &save_i,
                     &save_as_i,
+                    &PredefinedMenuItem::separator(app)?,
+                    &export_menu,
                 ],
             )?;
 
@@ -154,6 +233,13 @@ pub fn run() {
                                 true,
                                 Some("CmdOrCtrl+Shift+C"),
                             )?,
+                            &MenuItem::with_id(
+                                app,
+                                "copy_rich_text",
+                                "Copy as &Rich Text",
+                                true,
+                                None::<&str>,
+                            )?,
                             &PredefinedMenuItem::paste(app, None)?,
                             &PredefinedMenuItem::select_all(app, None)?,
                             &PredefinedMenuItem::separator(app)?,
@@ -174,6 +260,8 @@ pub fn run() {
                             &PredefinedMenuItem::fullscreen(app, None)?,
                             &sync_scroll_i,
                             &render_fm_i,
+                            &PredefinedMenuItem::separator(app)?,
+                            &theme_menu,
                         ],
                     )?,
                     &Submenu::with_items(
@@ -195,6 +283,8 @@ pub fn run() {
                     app_handle.emit("menu-new", ()).unwrap();
                 } else if event.id() == open_i.id() {
                     app_handle.emit("menu-open", ()).unwrap();
+                } else if event.id() == open_folder_i.id() {
+                    app_handle.emit("menu-open-folder", ()).unwrap();
                 } else if event.id() == save_i.id() {
                     app_handle.emit("menu-save", ()).unwrap();
                 } else if event.id() == save_as_i.id() {
@@ -209,12 +299,26 @@ pub fn run() {
                 } else if event.id() == render_fm_i.id() {
                     let is_checked = render_fm_i.is_checked().unwrap_or(true);
                     app_handle.emit("toggle-frontmatter", is_checked).unwrap();
+                } else if event.id() == "theme_system" {
+                    app_handle.emit("menu-theme-system", ()).unwrap();
+                } else if event.id() == "theme_light" {
+                    app_handle.emit("menu-theme-light", ()).unwrap();
+                } else if event.id() == "theme_dark" {
+                    app_handle.emit("menu-theme-dark", ()).unwrap();
                 } else if event.id() == prefs_i.id() {
                     app_handle.emit("menu-preferences", ()).unwrap();
                 } else if event.id() == "normalize" {
                     app_handle.emit("menu-normalize", ()).unwrap();
                 } else if event.id() == "copy_llm" {
                     app_handle.emit("menu-copy-llm", ()).unwrap();
+                } else if event.id() == "export_html" {
+                    app_handle.emit("menu-export-html", ()).unwrap();
+                } else if event.id() == "export_pdf" {
+                    app_handle.emit("menu-export-pdf", ()).unwrap();
+                } else if event.id() == "export_docx" {
+                    app_handle.emit("menu-export-docx", ()).unwrap();
+                } else if event.id() == "copy_rich_text" {
+                    app_handle.emit("menu-copy-rich-text", ()).unwrap();
                 }
             });
 
@@ -237,7 +341,11 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![get_launch_file, watch_file])
+        .invoke_handler(tauri::generate_handler![
+            get_launch_file,
+            watch_file,
+            read_dir
+        ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application");
 

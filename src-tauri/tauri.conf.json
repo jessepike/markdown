@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "pike-markdown",
+  "productName": "AgentPad",
   "version": "0.2.0",
-  "identifier": "com.pike.markdown",
+  "identifier": "com.agentpad.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,9 +12,12 @@
   "app": {
     "windows": [
       {
-        "title": "Pike Markdown",
+        "title": "AgentPad",
         "width": 800,
         "height": 600,
+        "decorations": true,
+        "titleBarStyle": "Visible",
+        "transparent": false,
         "dragDropEnabled": true,
         "devtools": true
       }
