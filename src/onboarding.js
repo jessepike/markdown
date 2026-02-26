@@ -20,11 +20,17 @@ export function showOnboarding() {
                 <h3 style="margin-top:0">Key Shortcuts</h3>
                 <ul style="padding-left: 20px;">
                     <li><strong>Cmd+O</strong> : Open File</li>
+                    <li><strong>Cmd+T</strong> : New Temp Tab</li>
                     <li><strong>Cmd+S</strong> : Save File</li>
                     <li><strong>Cmd+P</strong> : Toggle Preview</li>
                     <li><strong>Cmd+E</strong> : Editor Only</li>
                     <li><strong>Cmd+B</strong> : Toggle Sidebar</li>
                     <li><strong>Cmd+F</strong> : Find & Replace</li>
+                    <li><strong>Cmd+Shift+Space</strong> : Jump to Scratchpad</li>
+                    <li><strong>Cmd+Shift+K</strong> : Toggle Clipboard Shelf</li>
+                    <li><strong>Cmd+Shift+V</strong> : Add Clipboard to Shelf</li>
+                    <li><strong>Cmd+Shift+Y</strong> : Add Selection to Shelf</li>
+                    <li><strong>Cmd+Shift+J</strong> : Focus Shelf Search</li>
                 </ul>
             </div>
 

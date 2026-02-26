@@ -242,14 +242,6 @@ pub fn run() {
                             )?,
                             &PredefinedMenuItem::paste(app, None)?,
                             &PredefinedMenuItem::select_all(app, None)?,
-                            &PredefinedMenuItem::separator(app)?,
-                            &MenuItem::with_id(
-                                app,
-                                "normalize",
-                                "Normalize",
-                                true,
-                                Some("CmdOrCtrl+Shift+N"),
-                            )?,
                         ],
                     )?,
                     &Submenu::with_items(
@@ -307,8 +299,6 @@ pub fn run() {
                     app_handle.emit("menu-theme-dark", ()).unwrap();
                 } else if event.id() == prefs_i.id() {
                     app_handle.emit("menu-preferences", ()).unwrap();
-                } else if event.id() == "normalize" {
-                    app_handle.emit("menu-normalize", ()).unwrap();
                 } else if event.id() == "copy_llm" {
                     app_handle.emit("menu-copy-llm", ()).unwrap();
                 } else if event.id() == "export_html" {

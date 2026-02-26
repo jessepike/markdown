@@ -4,14 +4,16 @@ import { readTextFile, writeTextFile, mkdir, exists } from '@tauri-apps/plugin-f
 const SETTINGS_FILE = 'settings.json';
 
 const DEFAULTS = {
-    normalizationMode: 'auto', // off, manual, auto
     xmlWrapperTag: 'document',
     editorFontSize: 14,
-    theme: 'dark', // dark, light (future)
+    theme: 'system', // dark, light, system
     syncScroll: true,
     renderFrontmatter: true,
     alwaysReload: false,
-    includeFrontmatterInCopyLLM: false
+    includeFrontmatterInCopyLLM: false,
+    sanitizationStripFrontmatter: true,
+    exportIncludeTheme: true,
+    spellcheckEnabled: false
 };
 
 class PreferencesManager {

@@ -1,0 +1,62 @@
+
+@media print {
+  /* Hide UI elements */
+  .controls,
+  .status-bar,
+  .resizer,
+  .btn,
+  .paused-indicator,
+  .editor-pane,
+  .drop-zone,
+  .prefs-modal {
+    display: none !important;
+  }
+
+  /* Reset layout for full page */
+  body,
+  #app,
+  .preview-pane {
+    height: auto !important;
+    overflow: visible !important;
+    display: block !important;
+    position: static !important;
+    background: white !important;
+    color: black !important;
+  }
+
+  .preview-pane {
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    border: none !important;
+  }
+
+  /* Reset colors for printing */
+  :root {
+    --bg-app: white;
+    --bg-editor: white;
+    --text-main: black;
+    --text-muted: #666;
+    --border: #ddd;
+    --accent: #000;
+  }
+
+  .markdown-body {
+    max-width: 100% !important;
+    color: black !important;
+    background: white !important;
+  }
+
+  .markdown-body h1,
+  .markdown-body h2,
+  .markdown-body h3,
+  .markdown-body a {
+    color: black !important;
+  }
+
+  .markdown-body pre {
+    background: #f5f5f5 !important;
+    border: 1px solid #ddd;
+    white-space: pre-wrap; /* Wrap long checks */
+  }
+}

@@ -1,19 +1,15 @@
 import { EditorView, basicSetup } from "codemirror";
 import { placeholder } from "@codemirror/view";
-import { EditorState } from "@codemirror/state";
+import { Compartment, EditorState } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
-// Theme handled by custom definition below
-// Spec said "One Dark aesthetic", I can use the official theme if installed.
-// I installed: @codemirror/lang-markdown @codemirror/view @codemirror/state codemirror
-// I missed @codemirror/theme-one-dark.
-// I will simulate One Dark via EditorView.theme for now to save a huge install step,
-// or I can just install it quickly next.
-// Let's implement a quick custom theme object here to match CSS variables.
+import { search, openSearchPanel, closeSearchPanel } from "@codemirror/search";
+
+const themeCompartment = new Compartment();
 
 const zedTheme = EditorView.theme({
     "&": {
         color: "#abb2bf",
-        backgroundColor: "#23272e"
+        backgroundColor: "#282c34" // Match --bg-editor
     },
     ".cm-content": {
         caretColor: "#528bff"
@@ -25,18 +21,43 @@ const zedTheme = EditorView.theme({
         backgroundColor: "#3e4451"
     },
     ".cm-gutters": {
-        backgroundColor: "#23272e",
+        backgroundColor: "#282c34",
         color: "#5c6370",
         border: "none"
     }
 }, { dark: true });
 
-export function createEditor(parent, initialContent, onChange, onCursorChange, onPaste) {
+const lightTheme = EditorView.theme({
+    "&": {
+        color: "#0d1117",
+        backgroundColor: "#e1e4e8" // Match --bg-editor
+    },
+    ".cm-content": {
+        caretColor: "#0969da"
+    },
+    "&.cm-focused .cm-cursor": {
+        borderLeftColor: "#0969da"
+    },
+    "&.cm-focused .cm-selectionBackground, ::selection": {
+        backgroundColor: "#bbefff"
+    },
+    ".cm-gutters": {
+        backgroundColor: "#e1e4e8",
+        color: "#57606a",
+        border: "none"
+    }
+}, { dark: false });
+
+export function setEditorTheme(view, isDark) {
+    view.dispatch({
+        effects: themeCompartment.reconfigure(isDark ? zedTheme : lightTheme)
+    });
+}
+
+export function createEditor(parent, initialContent, onChange, onCursorChange, onPaste, options = {}) {
     const pasteHandler = onPaste ? EditorView.domEventHandlers({
         paste(event, view) {
-            // Let the paste land first, then notify
-            if (onPaste) setTimeout(() => onPaste(view), 0);
-            return false; // Don't prevent default paste behavior
+            return onPaste(event, view);
         }
     }) : [];
 
@@ -45,9 +66,13 @@ export function createEditor(parent, initialContent, onChange, onCursorChange, o
         extensions: [
             basicSetup, // Using the convenience basicSetup from 'codemirror' package
             markdown(),
-            zedTheme,
+            themeCompartment.of(options.theme === 'light' ? lightTheme : zedTheme),
+            search({ top: true }), // Configure search panel to appear at top
             placeholder("Start typing..."),
             pasteHandler,
+            EditorView.contentAttributes.of({
+                spellcheck: options.spellcheck ? "true" : "false"
+            }),
             EditorView.updateListener.of((update) => {
                 if (update.docChanged) {
                     onChange(update.state.doc.toString());
@@ -69,4 +94,18 @@ export function createEditor(parent, initialContent, onChange, onCursorChange, o
     });
 
     return view;
+}
+
+export function toggleSearch(view) {
+    // Check if search panel exists in DOM
+    const panel = view.dom.querySelector('.cm-search');
+    if (panel) {
+        closeSearchPanel(view);
+        // Return focus to editor
+        view.focus();
+    } else {
+        openSearchPanel(view);
+        // Focus usually happens automatically, but let's ensure input is focused?
+        // CodeMirror handles this usually.
+    }
 }

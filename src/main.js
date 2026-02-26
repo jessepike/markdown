@@ -10,7 +10,6 @@ import { appConfigDir, join } from '@tauri-apps/api/path';
 import { prefs } from './preferences.js';
 import { prefsUI } from './preferences-ui.js';
 import { statusBar } from './status-bar.js';
-import { normalizationUI } from './normalization-ui.js';
 import { reloadPromptUI } from './reload-prompt-ui.js';
 import { Sidebar } from './sidebar.js';
 import { tabs } from './tabs.js';
@@ -26,6 +25,7 @@ const RENDER_FM_KEY = 'pike-render-fm';
 const MAX_RECENT_FILES = 10;
 const UNTITLED_TITLE = 'Untitled';
 const SCRATCH_TAB_PATH = 'scratch://untitled';
+const TEMP_TAB_PREFIX = 'scratch://temp-';
 const SCRATCH_FILE = 'scratchpad.md';
 
 // Helper function to set window title using Tauri API
@@ -47,7 +47,7 @@ let isSyncScrollEnabled = localStorage.getItem(SYNC_SCROLL_KEY) !== 'false';
 let isRenderFmEnabled = localStorage.getItem(RENDER_FM_KEY) !== 'false';
 
 let currentFilePath = null;
-let openDocuments = new Map(); // path -> { content: string, lastSavedContent: string, isDirty: boolean }
+let openDocuments = new Map(); // path -> { content, lastSavedContent, isDirty, displayName? }
 let debounceTimer = null;
 let isPreviewPaused = false;
 let isSaving = false; // Latch to prevent self-triggering watcher
@@ -55,9 +55,33 @@ let lastSavedContent = ''; // Debounce self-edits
 let lastKnownMtime = 0;
 let scratchStoragePath = null;
 let scratchPersistTimer = null;
+let tempTabCounter = 1;
 
 function isScratchpadPath(path) {
     return path === SCRATCH_TAB_PATH;
+}
+
+function isTempTabPath(path) {
+    return typeof path === 'string' && path.startsWith(TEMP_TAB_PREFIX);
+}
+
+function isVirtualTabPath(path) {
+    return isScratchpadPath(path) || isTempTabPath(path);
+}
+
+function getBasename(path) {
+    return path.split(/[/\\]/).pop();
+}
+
+function getNextTempTabName() {
+    const names = Array.from(openDocuments.values())
+        .map(doc => doc.displayName || '')
+        .filter(name => /^Temp \\d+$/.test(name));
+    if (names.length === 0) return `Temp ${tempTabCounter++}`;
+
+    const max = Math.max(...names.map(name => Number(name.replace('Temp ', ''))));
+    tempTabCounter = Math.max(tempTabCounter, max + 1);
+    return `Temp ${tempTabCounter++}`;
 }
 
 async function getScratchStoragePath() {
@@ -120,7 +144,8 @@ async function ensureScratchpadTab() {
         openDocuments.set(SCRATCH_TAB_PATH, {
             content,
             lastSavedContent: content,
-            isDirty: false
+            isDirty: false,
+            displayName: 'Scratchpad'
         });
     }
 
@@ -192,11 +217,26 @@ async function openPathWithUnsavedCheck(path, actionLabel = 'open another file')
 async function addSelectionToShelf() {
     const sel = editor.state.selection.main;
     if (sel.from === sel.to) {
-        alert('Select text to add to clipboard shelf.');
+        clipboardShelf.toast('Select text in editor first', 'warn');
         return;
     }
     const selectedText = editor.state.doc.sliceString(sel.from, sel.to);
     await clipboardShelf.addText(selectedText, 'selection');
+}
+
+async function createTempTab() {
+    const path = `${TEMP_TAB_PREFIX}${Date.now()}`;
+    const name = getNextTempTabName();
+
+    openDocuments.set(path, {
+        content: '',
+        lastSavedContent: '',
+        isDirty: false,
+        displayName: name
+    });
+
+    tabs.addTab(path, { name });
+    await switchTab(path);
 }
 
 console.log('AgentPad: Main script initializing...');
@@ -349,6 +389,12 @@ openBtn.className = 'btn';
 openBtn.onclick = openFile;
 openBtn.title = 'Open File (Cmd+O)';
 
+const newTabBtn = document.createElement('button');
+newTabBtn.textContent = '+ Tab';
+newTabBtn.className = 'btn';
+newTabBtn.onclick = createTempTab;
+newTabBtn.title = 'New temporary tab (Cmd+T)';
+
 // Preview Toggle Button
 const previewBtn = document.createElement('button');
 previewBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
@@ -366,10 +412,11 @@ codeBtn.title = 'Raw View (Cmd+E)';
 const shelfBtn = document.createElement('button');
 shelfBtn.textContent = 'Shelf';
 shelfBtn.className = 'btn';
-shelfBtn.title = 'Toggle Clipboard Shelf (Cmd+Shift+K)';
+shelfBtn.title = 'Toggle Clipboard Shelf (Cmd+Shift+K). Add clipboard: Cmd+Shift+V, selection: Cmd+Shift+Y, search: Cmd+Shift+J';
 shelfBtn.onclick = () => clipboardShelf.toggle();
 
 controls.appendChild(openBtn);
+controls.appendChild(newTabBtn);
 controls.appendChild(codeBtn);
 controls.appendChild(previewBtn);
 controls.appendChild(shelfBtn);
@@ -508,24 +555,6 @@ const editor = createEditor(editorContainer, "", (newContent) => {
         return true; // Prevent default paste
     }
 
-    // 2. Auto-normalization (Post-paste)
-    if (prefs.get('normalizationMode') === 'auto') {
-        // We need to wait for the paste to apply to doc before checking?
-        // Or we check the text being pasted?
-        // Existing logic used setTimeout (implicit in previous editor.js).
-        // We must re-implement the delay or check.
-        setTimeout(() => {
-            const content = editor.state.doc.toString();
-            normalizationUI.showDiff(content, (normalized) => {
-                editor.dispatch({
-                    changes: { from: 0, to: editor.state.doc.length, insert: normalized }
-                });
-                performAutoSave(normalized);
-                tokenWorker.postMessage(normalized);
-            });
-        }, 10);
-    }
-
     return false; // Allow default paste
 }, {
     spellcheck: prefs.get('spellcheckEnabled'),
@@ -554,6 +583,11 @@ showOnboarding();
 
 // Initialize scratchpad + clipboard shelf
 (async () => {
+    clipboardShelf.setSelectionProvider(() => {
+        const sel = editor.state.selection.main;
+        if (sel.from === sel.to) return '';
+        return editor.state.doc.sliceString(sel.from, sel.to);
+    });
     await ensureScratchpadTab();
     await switchTab(SCRATCH_TAB_PATH);
     await clipboardShelf.init(document.body);
@@ -705,18 +739,6 @@ document.addEventListener('mouseup', () => {
         await listen('menu-preferences', () => {
             prefsUI.toggle();
         });
-
-        await listen('menu-normalize', () => {
-            const content = editor.state.doc.toString();
-            normalizationUI.showDiff(content, (normalized) => {
-                editor.dispatch({
-                    changes: { from: 0, to: editor.state.doc.length, insert: normalized }
-                });
-                performAutoSave(normalized);
-                tokenWorker.postMessage(normalized); // Update token count immediately
-            });
-        });
-
 
         await listen('menu-copy-llm', async () => {
             const sel = editor.state.selection.main;
@@ -1070,7 +1092,7 @@ function getRecentFiles() {
     try {
         const stored = localStorage.getItem(RECENT_FILES_KEY);
         const parsed = stored ? JSON.parse(stored) : [];
-        return parsed.filter(path => !isScratchpadPath(path));
+        return parsed.filter(path => !isVirtualTabPath(path));
     } catch {
         return [];
     }
@@ -1187,10 +1209,11 @@ async function switchTab(path) {
         tabs.setDirty(path, doc.isDirty);
 
         // Update Title
-        await setWindowTitle(isScratchpadPath(path) ? 'Scratchpad' : path);
+        const title = isVirtualTabPath(path) ? (doc.displayName || UNTITLED_TITLE) : path;
+        await setWindowTitle(title);
 
         // Add to recent
-        if (!isScratchpadPath(path)) {
+        if (!isVirtualTabPath(path)) {
             addToRecent(path);
         }
     }
@@ -1243,7 +1266,8 @@ async function loadFile(path) {
         openDocuments.set(path, {
             content: content,
             lastSavedContent: content,
-            isDirty: false
+            isDirty: false,
+            displayName: getBasename(path)
         });
 
         // Save previous state before switching
@@ -1298,9 +1322,10 @@ async function openFile() {
 
 async function saveFile(saveAs = false) {
     const content = editor.state.doc.toString();
+    const savingVirtual = isVirtualTabPath(currentFilePath);
     const savingScratch = isScratchpadPath(currentFilePath);
 
-    if (!currentFilePath || saveAs || savingScratch) {
+    if (!currentFilePath || saveAs || savingVirtual) {
         // Save As
         const selected = await save({
             filters: [{ name: 'Markdown', extensions: ['md'] }]
@@ -1315,7 +1340,8 @@ async function saveFile(saveAs = false) {
                     openDocuments.set(selected, {
                         content,
                         lastSavedContent: content,
-                        isDirty: false
+                        isDirty: false,
+                        displayName: getBasename(selected)
                     });
                     tabs.addTab(selected);
                     tabs.setDirty(selected, false);
@@ -1335,6 +1361,7 @@ async function saveFile(saveAs = false) {
             if (previousPath && previousPath !== currentFilePath && openDocuments.has(previousPath)) {
                 const previousDoc = openDocuments.get(previousPath);
                 openDocuments.delete(previousPath);
+                previousDoc.displayName = getBasename(currentFilePath);
                 openDocuments.set(currentFilePath, previousDoc);
                 tabs.removeTab(previousPath);
                 tabs.addTab(currentFilePath);
@@ -1342,7 +1369,8 @@ async function saveFile(saveAs = false) {
                 openDocuments.set(currentFilePath, {
                     content,
                     lastSavedContent: content,
-                    isDirty: false
+                    isDirty: false,
+                    displayName: getBasename(currentFilePath)
                 });
                 tabs.addTab(currentFilePath);
             }
@@ -1462,6 +1490,12 @@ window.addEventListener('keydown', (e) => {
                 e.preventDefault();
                 openFile();
                 break;
+            case 't':
+                if (!e.shiftKey) {
+                    e.preventDefault();
+                    createTempTab();
+                }
+                break;
             case 's':
                 e.preventDefault();
                 saveFile();
@@ -1486,6 +1520,12 @@ window.addEventListener('keydown', (e) => {
                 if (e.shiftKey) {
                     e.preventDefault();
                     addSelectionToShelf();
+                }
+                break;
+            case 'j':
+                if (e.shiftKey) {
+                    e.preventDefault();
+                    clipboardShelf.focusSearch();
                 }
                 break;
         }

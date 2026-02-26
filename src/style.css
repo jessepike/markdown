@@ -1,3 +1,183 @@
+@import "./print.css";
+
+:root {
+  --bg-app: #282c34;
+  --bg-sidebar: #21252b;
+  --bg-editor: #282c34;
+  --bg-preview: #282c34;
+  --text-main: #abb2bf;
+  --text-muted: #5c6370;
+  --border: #181a1f;
+  --accent: #61afef;
+  --accent-hover: #528bff;
+  --selection: #3e4451;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Menlo', monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --text-h1: #61afef;
+  --text-h2: #7e97ac;
+  --text-h3: #5c86a3;
+  --editor-font-size: 14px;
+}
+
+/* Light Mode Overrides */
+body.light-mode {
+  --bg-app: #e1e4e8;
+  /* PROMINENT Light Gray */
+  --bg-sidebar: #d0d7de;
+  /* Darker gray for sidebar */
+  --bg-editor: #e1e4e8;
+  /* Match app bg */
+  --bg-preview: #e1e4e8;
+  --text-main: #0d1117;
+  /* Almost Black */
+  --text-muted: #57606a;
+  --border: #c0c4c8;
+  /* Darker border */
+  --accent: #0969da;
+  --accent-hover: #035cc5;
+  --selection: #bbefff;
+  /* Brighter selection to stand out against gray */
+
+  /* Header Colors for Light Mode (Darker for contrast) */
+  --text-h1: #0550ae;
+  --text-h2: #24292e;
+  --text-h3: #57606a;
+}
+
+/* CodeMirror Search Panel */
+.cm-search {
+
+  background-color: #2c313a !important;
+  color: #abb2bf !important;
+  border: 1px solid #181a1f !important;
+  border-radius: 6px;
+  padding: 6px !important;
+  font-family: var(--font-ui) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  margin-top: 4px;
+}
+
+.cm-search input {
+  background: #1e2227;
+  border: 1px solid #181a1f;
+  color: #fff;
+  border-radius: 4px;
+  padding: 4px 8px;
+  outline: none;
+}
+
+.cm-search button {
+  background: linear-gradient(to bottom, #3e4451, #353a45);
+  border: 1px solid #181a1f;
+  color: #fff;
+  border-radius: 4px;
+  margin-left: 4px;
+  cursor: pointer;
+  text-transform: none !important;
+  font-size: 12px;
+  padding: 2px 8px;
+}
+
+.cm-search button:hover {
+  background: #4b5363;
+}
+
+.cm-search label {
+  color: #abb2bf;
+  font-size: 12px;
+  margin-right: 4px;
+}
+
+.cm-search .cm-button {
+  background-image: none;
+  /* Reset CM defaults */
+}
+
+/* Sidebar Pane */
+.sidebar-pane {
+  width: 250px;
+  background: var(--bg-app);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  overflow: hidden;
+}
+
+.sidebar-resizer {
+  width: 5px;
+  background: transparent;
+  cursor: col-resize;
+  flex: none;
+  z-index: 20;
+}
+
+.sidebar-resizer:hover,
+.sidebar-resizer.resizing {
+  background: var(--accent);
+}
+
+
+
+/* File Tree */
+.file-tree {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--text-main);
+  user-select: none;
+}
+
+.file-item {
+  padding: 4px 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  gap: 6px;
+}
+
+.file-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.file-item.active {
+  background: rgba(97, 175, 239, 0.2);
+  color: var(--accent);
+}
+
+.file-icon {
+  width: 16px;
+  display: inline-block;
+  text-align: center;
+  opacity: 0.7;
+}
+
+.file-children {
+  display: block;
+}
+
+.file-children.hidden {
+  display: none;
+}
+
+.empty-message,
+.error-item {
+  padding: 16px;
+  color: var(--text-muted);
+  text-align: center;
+  font-style: italic;
+}
+
+.error-item {
+  color: #e06c75;
+}
+
 :root {
   --bg-app: #1e2227;
   --bg-editor: #23272e;
@@ -33,20 +213,129 @@ body {
 
 /* Editor Pane */
 .editor-pane {
-  flex: 1;
-  height: 100%;
-  overflow: hidden;
+  flex-grow: 1;
   background: var(--bg-editor);
   position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* Tab Bar */
+.tab-bar {
+  display: flex;
+  flex-direction: row;
+  background: #21252b;
+  /* Darker than editor */
+  height: 35px;
+  min-height: 35px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: none;
+  /* Traffic Light Spacing */
+  padding-left: 0;
+  padding-right: 150px;
+  /* Space for controls */
+  transition: padding-left 0.2s;
+  app-region: drag;
+  -webkit-app-region: drag;
+}
+
+/* When sidebar is hidden, we need space for traffic lights in the tab bar */
+#app:not(.has-sidebar) .tab-bar {
+  padding-left: 80px;
+  /* Approx space for traffic lights on Mac */
+}
+
+/* Sidebar Traffic Light Handling */
+.sidebar-pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Drag Region for Traffic Lights over Sidebar */
+.sidebar-drag-handle {
+  width: 100%;
+  height: 35px;
+  /* Match tab bar height */
+  flex: none;
+  z-index: 100;
+  app-region: drag;
+  -webkit-app-region: drag;
+}
+
+.tab-item {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  min-width: 100px;
+  max-width: 200px;
+  height: 100%;
+  font-size: 13px;
+  color: #9da5b4;
+  cursor: pointer;
+  border-right: 1px solid var(--border);
+  user-select: none;
+  background: #21252b;
+  position: relative;
+  transition: background 0.1s, color 0.1s;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.tab-item:hover {
+  background: #262a33;
+}
+
+.tab-item.active {
+  background: var(--bg-editor);
+  /* Matches Editor */
+  color: #d7dae0;
+  border-top: 2px solid var(--accent);
+  /* Blue Top Border */
+}
+
+/* Ensure editor grows */
+.cm-editor {
+  flex-grow: 1;
+  height: 0;
+  /* Important for scroll */
+  font-family: var(--font-mono) !important;
+  font-size: var(--editor-font-size, 14px);
+}
+
+.cm-scroller {
+  font-family: inherit;
+}
+
+/* Markdown Content Styling (GitHub-like but dark) */
+.markdown-body {
+  line-height: 1.6;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3 {
+  color: var(--accent);
+  /* Default to accent, overridden below */
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  font-weight: 600;
 }
 
 .controls {
   position: absolute;
-  top: 1rem;
-  right: 1rem;
+  top: 4px;
+  right: 12px;
   z-index: 20;
   display: flex;
   gap: 8px;
+  align-items: center;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
 }
 
 .btn {
@@ -230,6 +519,9 @@ body {
   line-height: 1.6;
   max-width: 800px;
   margin: 0 auto;
+  color: var(--text-main);
+  background-color: var(--bg-preview);
+  padding: 20px;
 }
 
 .markdown-body h1,
@@ -243,22 +535,19 @@ body {
 }
 
 .markdown-body h1 {
-  color: #61afef;
-  /* Soft Blue */
+  color: var(--text-h1);
   font-size: 2em;
   border-bottom: 1px solid var(--border);
   padding-bottom: 0.3em;
 }
 
 .markdown-body h2 {
-  color: #7e97ac;
-  /* Muted Blue-Gray */
+  color: var(--text-h2);
   font-size: 1.5em;
 }
 
 .markdown-body h3 {
-  color: #5c86a3;
-  /* Darker/Deep Blue-Gray */
+  color: var(--text-h3);
   font-size: 1.25em;
 }
 
@@ -609,4 +898,244 @@ body {
 
 .btn.primary:hover {
   background: #528bff;
+}
+
+.clipboard-shelf-panel {
+  position: fixed;
+  top: 48px;
+  right: 16px;
+  width: min(460px, calc(100vw - 32px));
+  height: min(70vh, 760px);
+  background: var(--bg-editor);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  z-index: 120;
+  display: flex;
+  flex-direction: column;
+}
+
+.clipboard-shelf-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.clipboard-shelf-header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.clipboard-shelf-header h3 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--text-main);
+}
+
+.clipboard-shelf-actions {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.clipboard-shelf-actions .btn.secondary {
+  width: auto;
+}
+
+.clipboard-shelf-composer {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.clipboard-shelf-helper {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.clipboard-shelf-search {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-app);
+  color: var(--text-main);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 7px 8px;
+  outline: none;
+}
+
+.clipboard-shelf-search:focus {
+  border-color: var(--accent);
+}
+
+.clipboard-shelf-options {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.clipboard-shelf-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-main);
+}
+
+.clipboard-shelf-ttl {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-app);
+  color: var(--text-main);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  padding: 6px 8px;
+}
+
+.clipboard-shelf-input {
+  min-height: 74px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-app);
+  color: var(--text-main);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 8px;
+  outline: none;
+}
+
+.clipboard-shelf-input:focus {
+  border-color: var(--accent);
+}
+
+.clipboard-shelf-list {
+  padding: 12px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.clipboard-shelf-empty {
+  color: var(--text-muted);
+  text-align: center;
+  margin-top: 40px;
+}
+
+.clipboard-shelf-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--bg-app);
+}
+
+.clipboard-shelf-item-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.clipboard-shelf-item-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: 4px;
+}
+
+.clipboard-shelf-pin,
+.clipboard-shelf-sensitive {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  letter-spacing: 0.04em;
+}
+
+.clipboard-shelf-pin {
+  background: rgba(97, 175, 239, 0.25);
+  color: #9bcbf3;
+}
+
+.clipboard-shelf-sensitive {
+  background: rgba(224, 108, 117, 0.25);
+  color: #f0b1b7;
+}
+
+.clipboard-shelf-item-meta {
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-bottom: 8px;
+}
+
+.clipboard-shelf-item-preview {
+  margin: 0;
+  color: var(--text-main);
+  font-size: 12px;
+  line-height: 1.4;
+  max-height: 120px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.clipboard-shelf-item-preview.masked {
+  color: #d19a66;
+  font-style: italic;
+}
+
+.clipboard-shelf-item-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}
+
+.clipboard-shelf-item-actions .btn.secondary {
+  width: auto;
+}
+
+.app-toast-host {
+  position: fixed;
+  right: 14px;
+  bottom: 42px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 180;
+}
+
+.app-toast {
+  opacity: 0;
+  transform: translateY(8px);
+  transition: all 0.16s ease;
+  background: #1e2227;
+  color: #d7dae0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+.app-toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.app-toast.warn {
+  border-color: #d19a66;
+}
+
+.app-toast.error {
+  border-color: #e06c75;
 }

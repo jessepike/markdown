@@ -74,26 +74,8 @@ export class PreferencesUI {
 
         modal.appendChild(editorSec);
 
-        // Normalization Section
-        const normSec = createSection('Normalization');
-
-        // Mode
-        const normSelect = document.createElement('select');
-        normSelect.className = 'prefs-select';
-        ['off', 'manual', 'auto'].forEach(opt => {
-            const o = document.createElement('option');
-            o.value = opt;
-            o.textContent = opt.charAt(0).toUpperCase() + opt.slice(1);
-            if (prefs.get('normalizationMode') === opt) o.selected = true;
-            normSelect.appendChild(o);
-        });
-        normSelect.onchange = (e) => prefs.set('normalizationMode', e.target.value);
-        normSec.appendChild(createRow('Mode', normSelect));
-
-        modal.appendChild(normSec);
-
         // Export/LLM Section
-        const llmSec = createSection('LLM Export');
+        const llmSec = createSection('Export & Sanitization');
 
         // XML Tag
         const tagInput = document.createElement('input');
@@ -109,7 +91,23 @@ export class PreferencesUI {
         fmLlmCheck.className = 'prefs-toggle';
         fmLlmCheck.checked = prefs.get('includeFrontmatterInCopyLLM');
         fmLlmCheck.onchange = (e) => prefs.set('includeFrontmatterInCopyLLM', e.target.checked);
-        llmSec.appendChild(createRow('Include Frontmatter', fmLlmCheck));
+        llmSec.appendChild(createRow('Include Frontmatter (LLM Copy)', fmLlmCheck));
+
+        // Strip Frontmatter (General Export)
+        const stripFmCheck = document.createElement('input');
+        stripFmCheck.type = 'checkbox';
+        stripFmCheck.className = 'prefs-toggle';
+        stripFmCheck.checked = prefs.get('sanitizationStripFrontmatter');
+        stripFmCheck.onchange = (e) => prefs.set('sanitizationStripFrontmatter', e.target.checked);
+        llmSec.appendChild(createRow('Strip Frontmatter (HTML/Rich Text)', stripFmCheck));
+
+        // Include Theme
+        const themeCheck = document.createElement('input');
+        themeCheck.type = 'checkbox';
+        themeCheck.className = 'prefs-toggle';
+        themeCheck.checked = prefs.get('exportIncludeTheme');
+        themeCheck.onchange = (e) => prefs.set('exportIncludeTheme', e.target.checked);
+        llmSec.appendChild(createRow('Include Theme Styles', themeCheck));
 
         modal.appendChild(llmSec);
 

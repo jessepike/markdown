@@ -8,7 +8,8 @@ self.onmessage = async (e) => {
     const text = e.data;
     try {
         const count = countTokens(text);
-        self.postMessage({ count });
+        const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+        self.postMessage({ count, words });
     } catch (err) {
         console.error('Token calculation failed:', err);
         self.postMessage({ error: err.message });
