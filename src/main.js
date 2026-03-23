@@ -31,6 +31,9 @@ const SCRATCH_FILE = 'scratchpad.md';
 const TEMP_SESSION_FILE = 'temp-tabs-session.json';
 const TEMP_TAB_WARNING_THRESHOLD = 50;
 const APP_IMAGE_MARKDOWN_PREFIX = 'app-images/';
+const isTauriRuntime = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+const WEB_SCRATCH_KEY = 'agentpad-web-workspace';
+const WEB_TEMP_SESSION_KEY = 'agentpad-web-temp-session';
 
 // Helper function to set window title using Tauri API
 async function setWindowTitle(title) {
@@ -40,6 +43,7 @@ async function setWindowTitle(title) {
             : UNTITLED_TITLE;
         const docTitle = safeTitle.split(/[/\\]/).pop() || safeTitle;
         document.title = docTitle;
+        if (!isTauriRuntime) return;
         const window = getCurrentWindow();
         await window.setTitle(safeTitle);
     } catch (err) {
@@ -99,6 +103,7 @@ function getNextTempTabName() {
 }
 
 async function getScratchStoragePath() {
+    if (!isTauriRuntime) return WEB_SCRATCH_KEY;
     if (scratchStoragePath) return scratchStoragePath;
     const configDir = await appConfigDir();
     if (!(await exists(configDir))) {
@@ -109,6 +114,7 @@ async function getScratchStoragePath() {
 }
 
 async function getTempSessionStoragePath() {
+    if (!isTauriRuntime) return WEB_TEMP_SESSION_KEY;
     if (tempSessionStoragePath) return tempSessionStoragePath;
     const configDir = await appConfigDir();
     if (!(await exists(configDir))) {
@@ -134,6 +140,7 @@ async function getVirtualImagesDirPath() {
 async function loadScratchpadContent() {
     try {
         const scratchPath = await getScratchStoragePath();
+        if (!isTauriRuntime) return localStorage.getItem(scratchPath) || '';
         if (!(await exists(scratchPath))) return '';
         return await readTextFile(scratchPath);
     } catch (err) {
@@ -146,7 +153,11 @@ async function persistScratchpad(content, immediate = false) {
     const write = async () => {
         try {
             const scratchPath = await getScratchStoragePath();
-            await writeTextFile(scratchPath, content);
+            if (!isTauriRuntime) {
+                localStorage.setItem(scratchPath, content);
+            } else {
+                await writeTextFile(scratchPath, content);
+            }
             const scratchDoc = openDocuments.get(SCRATCH_TAB_PATH);
             if (scratchDoc) {
                 scratchDoc.lastSavedContent = content;
@@ -182,11 +193,11 @@ async function ensureScratchpadTab() {
             content,
             lastSavedContent: content,
             isDirty: false,
-            displayName: 'Scratchpad'
+            displayName: 'Workspace'
         });
     }
 
-    tabs.addTab(SCRATCH_TAB_PATH, { name: 'Scratchpad', closable: false, activate: false });
+    tabs.addTab(SCRATCH_TAB_PATH, { name: 'Workspace', closable: false, activate: false });
     tabs.setDirty(SCRATCH_TAB_PATH, false);
 }
 
@@ -203,6 +214,15 @@ function getTempTabDocuments() {
         }));
 }
 
+function getFileBackedTabs() {
+    return Array.from(openDocuments.entries())
+        .filter(([path]) => !isVirtualTabPath(path))
+        .map(([path, doc]) => ({
+            path,
+            displayName: doc.displayName || getBasename(path),
+        }));
+}
+
 async function persistTempSession(immediate = false) {
     const write = async () => {
         try {
@@ -211,9 +231,14 @@ async function persistTempSession(immediate = false) {
                 version: 1,
                 savedAt: Date.now(),
                 activePath: currentFilePath || SCRATCH_TAB_PATH,
-                tempTabs: getTempTabDocuments()
+                tempTabs: getTempTabDocuments(),
+                fileTabs: getFileBackedTabs(),
             };
-            await writeTextFile(sessionPath, JSON.stringify(payload, null, 2));
+            if (!isTauriRuntime) {
+                localStorage.setItem(sessionPath, JSON.stringify(payload));
+            } else {
+                await writeTextFile(sessionPath, JSON.stringify(payload, null, 2));
+            }
         } catch (err) {
             console.error('Failed to persist temp tabs session:', err);
         }
@@ -236,18 +261,32 @@ async function persistTempSession(immediate = false) {
 async function loadTempSession() {
     try {
         const sessionPath = await getTempSessionStoragePath();
-        if (!(await exists(sessionPath))) return { activePath: null, tempTabs: [] };
+        if (!isTauriRuntime) {
+            const raw = localStorage.getItem(sessionPath);
+            if (!raw) return { activePath: null, tempTabs: [], fileTabs: [] };
+            const parsed = JSON.parse(raw);
+            const tempTabs = Array.isArray(parsed.tempTabs) ? parsed.tempTabs : [];
+            const fileTabs = Array.isArray(parsed.fileTabs) ? parsed.fileTabs : [];
+            return {
+                activePath: typeof parsed.activePath === 'string' ? parsed.activePath : null,
+                tempTabs: tempTabs.filter(tab => tab && typeof tab.path === 'string' && isTempTabPath(tab.path)),
+                fileTabs: fileTabs.filter(tab => tab && typeof tab.path === 'string' && !isVirtualTabPath(tab.path)),
+            };
+        }
+        if (!(await exists(sessionPath))) return { activePath: null, tempTabs: [], fileTabs: [] };
         const raw = await readTextFile(sessionPath);
         const parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed !== 'object') return { activePath: null, tempTabs: [] };
+        if (!parsed || typeof parsed !== 'object') return { activePath: null, tempTabs: [], fileTabs: [] };
         const tempTabs = Array.isArray(parsed.tempTabs) ? parsed.tempTabs : [];
+        const fileTabs = Array.isArray(parsed.fileTabs) ? parsed.fileTabs : [];
         return {
             activePath: typeof parsed.activePath === 'string' ? parsed.activePath : null,
-            tempTabs: tempTabs.filter(tab => tab && typeof tab.path === 'string' && isTempTabPath(tab.path))
+            tempTabs: tempTabs.filter(tab => tab && typeof tab.path === 'string' && isTempTabPath(tab.path)),
+            fileTabs: fileTabs.filter(tab => tab && typeof tab.path === 'string' && !isVirtualTabPath(tab.path)),
         };
     } catch (err) {
         console.error('Failed to load temp tabs session:', err);
-        return { activePath: null, tempTabs: [] };
+        return { activePath: null, tempTabs: [], fileTabs: [] };
     }
 }
 
@@ -315,20 +354,28 @@ async function preparePreviewContent(content) {
 }
 
 function postRenderUpdate(content) {
+    const docType = getDocumentType(currentFilePath);
     preparePreviewContent(content)
         .then((preparedContent) => {
             worker.postMessage({
                 content: preparedContent,
-                options: { renderFrontmatter: isRenderFmEnabled }
+                options: { renderFrontmatter: isRenderFmEnabled, docType }
             });
         })
         .catch((err) => {
             console.error('Failed to prepare preview content:', err);
             worker.postMessage({
                 content,
-                options: { renderFrontmatter: isRenderFmEnabled }
+                options: { renderFrontmatter: isRenderFmEnabled, docType }
             });
         });
+}
+
+function getDocumentType(path) {
+    if (!path || isVirtualTabPath(path)) return 'markdown';
+    const lower = path.toLowerCase();
+    if (lower.endsWith('.yaml') || lower.endsWith('.yml')) return 'yaml';
+    return 'markdown';
 }
 
 function decodeDataUrlToBytes(dataUrl) {
@@ -460,7 +507,6 @@ async function ensureCanDiscardUnsavedChanges(actionLabel = 'continue') {
 }
 
 async function openPathWithUnsavedCheck(path, actionLabel = 'open another file') {
-    if (!(await ensureCanDiscardUnsavedChanges(actionLabel))) return false;
     await loadFile(path);
     return true;
 }
@@ -489,6 +535,566 @@ function refreshSidebarCollections() {
         recentFiles: getRecentFiles(),
         tempTabs
     });
+    updateTopbar();
+}
+
+function getPromptCategories() {
+    const categories = new Set(['general']);
+    promptLibrary.getItems().forEach((item) => categories.add(item.category || 'general'));
+    return ['all', ...Array.from(categories).sort()];
+}
+
+function getLibraryPrompts() {
+    return promptLibrary.search(libraryState.query, {
+        category: libraryState.category,
+    });
+}
+
+function getSelectedPrompt() {
+    const prompts = getLibraryPrompts();
+    if (!prompts.length) return null;
+    const selected = prompts.find((item) => item.id === libraryState.selectedPromptId);
+    return selected || prompts[0];
+}
+
+function getVisibleShelfItems() {
+    const query = shelfState.query || '';
+    return clipboardShelf.getItems().filter((item) => {
+        const hay = `${item.title}\n${item.text}\n${item.kind}\n${(item.tags || []).join(' ')}`.toLowerCase();
+        return hay.includes(query.trim().toLowerCase());
+    });
+}
+
+function getSelectedShelfItem() {
+    const items = getVisibleShelfItems();
+    if (!items.length) return null;
+    const selected = items.find((item) => item.id === shelfState.selectedItemId);
+    return selected || items[0];
+}
+
+function getSearchResults() {
+    const query = searchState.query.trim();
+    if (!query) return [];
+
+    const results = [];
+    promptLibrary.search(query).forEach((prompt) => {
+        results.push({ type: 'prompt', id: prompt.id, title: prompt.title, subtitle: prompt.category || 'general', payload: prompt });
+    });
+    clipboardShelf.getItems().forEach((item) => {
+        const hay = `${item.title}\n${item.text}\n${item.kind}\n${(item.tags || []).join(' ')}`.toLowerCase();
+        if (hay.includes(query.toLowerCase())) {
+            results.push({ type: 'shelf', id: item.id, title: item.title, subtitle: item.kind, payload: item });
+        }
+    });
+    tabs.getTabs().forEach((tab) => {
+        if (tab.name.toLowerCase().includes(query.toLowerCase())) {
+            results.push({ type: 'tab', id: tab.path, title: tab.name, subtitle: 'Open tab', payload: tab });
+        }
+    });
+    getRecentFiles().forEach((path) => {
+        const name = getBasename(path);
+        if (name.toLowerCase().includes(query.toLowerCase()) || path.toLowerCase().includes(query.toLowerCase())) {
+            results.push({ type: 'file', id: path, title: name, subtitle: path, payload: path });
+        }
+    });
+
+    return results.filter((result) => searchState.filter === 'all' || result.type === searchState.filter);
+}
+
+async function createPromptFromCurrent() {
+    const sel = editor.state.selection.main;
+    const selectedText = sel.from === sel.to ? '' : editor.state.doc.sliceString(sel.from, sel.to);
+    const text = selectedText || editor.state.doc.toString();
+    const promptText = text.trim() ? text : '# New Prompt\n\nDescribe the task, context, and output you need.';
+    const promptRecord = await promptLibrary.addPrompt(promptText);
+    libraryState.selectedPromptId = promptRecord?.id || null;
+    setActiveSection('library');
+    clipboardShelf.toast('Saved to prompt library');
+}
+
+async function addPromptToShelf(prompt) {
+    await clipboardShelf.addText(prompt.text, 'prompt-library', {
+        kind: 'prompt',
+        title: prompt.title,
+        tags: prompt.tags,
+    });
+    shelfState.selectedItemId = null;
+    setActiveSection('shelf');
+}
+
+function createSurfaceScaffold(title, description) {
+    const root = document.createElement('div');
+    root.className = 'surface-view';
+    const header = document.createElement('div');
+    header.className = 'surface-header';
+    const titleEl = document.createElement('h2');
+    titleEl.textContent = title;
+    const descEl = document.createElement('p');
+    descEl.textContent = description;
+    header.appendChild(titleEl);
+    header.appendChild(descEl);
+    root.appendChild(header);
+    return root;
+}
+
+function renderLibraryView() {
+    libraryView.innerHTML = '';
+    const root = createSurfaceScaffold('Library', 'Prompt assets stay editable, searchable, and ready to reuse.');
+    const body = document.createElement('div');
+    body.className = 'library-layout';
+
+    const categoriesPane = document.createElement('div');
+    categoriesPane.className = 'surface-side-column';
+    const categoriesTitle = document.createElement('div');
+    categoriesTitle.className = 'surface-side-title';
+    categoriesTitle.textContent = 'Categories';
+    categoriesPane.appendChild(categoriesTitle);
+
+    getPromptCategories().forEach((category) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `surface-filter-btn ${libraryState.category === category ? 'active' : ''}`;
+        button.textContent = category === 'all' ? 'All prompts' : category;
+        button.onclick = () => {
+            libraryState.category = category;
+            renderLibraryView();
+        };
+        categoriesPane.appendChild(button);
+    });
+
+    const listPane = document.createElement('div');
+    listPane.className = 'surface-list-column';
+    const searchInput = document.createElement('input');
+    searchInput.className = 'surface-search-input';
+    searchInput.placeholder = 'Search prompts';
+    searchInput.value = libraryState.query;
+    searchInput.oninput = (event) => {
+        libraryState.query = event.target.value;
+        renderLibraryView();
+    };
+    listPane.appendChild(searchInput);
+
+    const promptList = document.createElement('div');
+    promptList.className = 'surface-list';
+    const prompts = getLibraryPrompts();
+    const selectedPrompt = getSelectedPrompt();
+    libraryState.selectedPromptId = selectedPrompt?.id || null;
+
+    if (!prompts.length) {
+        const empty = document.createElement('div');
+        empty.className = 'surface-empty';
+        empty.textContent = 'No prompts yet. Save a selection or create one from the current document.';
+        promptList.appendChild(empty);
+    } else {
+        prompts.forEach((prompt) => {
+            const card = document.createElement('button');
+            card.type = 'button';
+            card.className = `surface-list-item ${selectedPrompt?.id === prompt.id ? 'active' : ''}`;
+            card.onclick = () => {
+                libraryState.selectedPromptId = prompt.id;
+                renderLibraryView();
+            };
+            card.innerHTML = `
+                <div class="surface-list-title">${prompt.title}</div>
+                <div class="surface-list-meta">${prompt.category || 'general'} · ${new Date(prompt.updatedAt).toLocaleDateString()}</div>
+            `;
+            promptList.appendChild(card);
+        });
+    }
+    listPane.appendChild(promptList);
+
+    const detailPane = document.createElement('div');
+    detailPane.className = 'surface-detail-pane';
+    if (selectedPrompt) {
+        const titleInput = document.createElement('input');
+        titleInput.className = 'surface-title-input';
+        titleInput.value = selectedPrompt.title;
+        titleInput.onchange = (event) => promptLibrary.updatePrompt(selectedPrompt.id, { title: event.target.value }).then(renderLibraryView);
+
+        const bodyInput = document.createElement('textarea');
+        bodyInput.className = 'surface-textarea prompt-editor';
+        bodyInput.value = selectedPrompt.text;
+        bodyInput.onchange = (event) => promptLibrary.updatePrompt(selectedPrompt.id, { text: event.target.value }).then(renderLibraryView);
+
+        const categoryInput = document.createElement('input');
+        categoryInput.className = 'surface-input';
+        categoryInput.value = selectedPrompt.category || 'general';
+        categoryInput.onchange = (event) => promptLibrary.updatePrompt(selectedPrompt.id, { category: event.target.value }).then(renderLibraryView);
+
+        const tagsInput = document.createElement('input');
+        tagsInput.className = 'surface-input';
+        tagsInput.value = (selectedPrompt.tags || []).join(', ');
+        tagsInput.onchange = (event) => promptLibrary.updatePrompt(selectedPrompt.id, { tags: event.target.value }).then(renderLibraryView);
+
+        const notesInput = document.createElement('textarea');
+        notesInput.className = 'surface-textarea notes';
+        notesInput.value = selectedPrompt.notes || '';
+        notesInput.onchange = (event) => promptLibrary.updatePrompt(selectedPrompt.id, { notes: event.target.value }).then(renderLibraryView);
+
+        const actionRow = document.createElement('div');
+        actionRow.className = 'surface-action-row';
+        [
+            ['Copy', async () => navigator.clipboard.writeText(selectedPrompt.text)],
+            ['Duplicate', async () => { const duplicated = await promptLibrary.duplicatePrompt(selectedPrompt.id); libraryState.selectedPromptId = duplicated?.id || selectedPrompt.id; renderLibraryView(); }],
+            ['Add to Shelf', async () => addPromptToShelf(selectedPrompt)],
+            ['Delete', async () => { await promptLibrary.removePrompt(selectedPrompt.id); libraryState.selectedPromptId = null; renderLibraryView(); }],
+        ].forEach(([label, handler]) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'shell-action-btn';
+            button.textContent = label;
+            button.onclick = handler;
+            actionRow.appendChild(button);
+        });
+
+        detailPane.appendChild(titleInput);
+        detailPane.appendChild(actionRow);
+        detailPane.appendChild(bodyInput);
+
+        const metaGrid = document.createElement('div');
+        metaGrid.className = 'surface-meta-grid';
+        metaGrid.innerHTML = `
+            <label class="surface-meta-field"><span>Category</span></label>
+            <label class="surface-meta-field"><span>Tags</span></label>
+        `;
+        metaGrid.children[0].appendChild(categoryInput);
+        metaGrid.children[1].appendChild(tagsInput);
+        detailPane.appendChild(metaGrid);
+
+        const notesField = document.createElement('label');
+        notesField.className = 'surface-meta-field full';
+        const notesLabel = document.createElement('span');
+        notesLabel.textContent = 'Notes';
+        notesField.appendChild(notesLabel);
+        notesField.appendChild(notesInput);
+        detailPane.appendChild(notesField);
+    }
+
+    body.appendChild(categoriesPane);
+    body.appendChild(listPane);
+    body.appendChild(detailPane);
+    root.appendChild(body);
+    libraryView.appendChild(root);
+}
+
+function renderShelfView() {
+    shelfView.innerHTML = '';
+    const root = createSurfaceScaffold('Shelf', 'Compact capture cards stay persistent, searchable, and ready to move back into work.');
+    const body = document.createElement('div');
+    body.className = 'library-layout shelf-layout';
+
+    const listPane = document.createElement('div');
+    listPane.className = 'surface-list-column';
+    const searchInput = document.createElement('input');
+    searchInput.className = 'surface-search-input';
+    searchInput.placeholder = 'Search shelf items';
+    searchInput.value = shelfState.query;
+    searchInput.oninput = (event) => {
+        shelfState.query = event.target.value;
+        renderShelfView();
+    };
+    listPane.appendChild(searchInput);
+
+    const ingestRow = document.createElement('div');
+    ingestRow.className = 'surface-action-row';
+    const addClipboardBtn = document.createElement('button');
+    addClipboardBtn.type = 'button';
+    addClipboardBtn.className = 'shell-action-btn';
+    addClipboardBtn.textContent = 'Add Clipboard';
+    addClipboardBtn.onclick = () => clipboardShelf.addFromClipboard();
+    ingestRow.appendChild(addClipboardBtn);
+
+    const imageInput = document.createElement('input');
+    imageInput.type = 'file';
+    imageInput.accept = 'image/*';
+    imageInput.className = 'surface-file-input';
+    imageInput.onchange = async (event) => {
+        const [file] = Array.from(event.target.files || []);
+        if (file) {
+            await clipboardShelf.addImage(file, { source: 'shelf-upload' });
+            renderShelfView();
+        }
+    };
+    ingestRow.appendChild(imageInput);
+    listPane.appendChild(ingestRow);
+
+    const noteInput = document.createElement('textarea');
+    noteInput.className = 'surface-textarea notes';
+    noteInput.placeholder = 'Capture a note, snippet, or code block directly into the Shelf...';
+    listPane.appendChild(noteInput);
+
+    const saveNoteBtn = document.createElement('button');
+    saveNoteBtn.type = 'button';
+    saveNoteBtn.className = 'shell-action-btn';
+    saveNoteBtn.textContent = 'Save Note';
+    saveNoteBtn.onclick = async () => {
+        if (!noteInput.value.trim()) {
+            clipboardShelf.toast('Type a shelf note first', 'warn');
+            return;
+        }
+        await clipboardShelf.addText(noteInput.value, 'shelf-note');
+        noteInput.value = '';
+        renderShelfView();
+    };
+    listPane.appendChild(saveNoteBtn);
+
+    const itemList = document.createElement('div');
+    itemList.className = 'surface-list';
+    const items = getVisibleShelfItems();
+    const selectedItem = getSelectedShelfItem();
+    shelfState.selectedItemId = selectedItem?.id || null;
+
+    if (!items.length) {
+        const empty = document.createElement('div');
+        empty.className = 'surface-empty';
+        empty.textContent = 'No shelf items yet. Add clipboard text, selection snippets, or images.';
+        itemList.appendChild(empty);
+    } else {
+        items.forEach((item) => {
+            const card = document.createElement('button');
+            card.type = 'button';
+            card.className = `surface-list-item compact ${selectedItem?.id === item.id ? 'active' : ''}`;
+            card.onclick = () => {
+                shelfState.selectedItemId = item.id;
+                renderShelfView();
+            };
+            card.innerHTML = `
+                <div class="surface-list-title">${item.title}</div>
+                <div class="surface-list-meta">${item.kind} · ${item.source}</div>
+            `;
+            itemList.appendChild(card);
+        });
+    }
+    listPane.appendChild(itemList);
+
+    const detailPane = document.createElement('div');
+    detailPane.className = 'surface-detail-pane';
+    if (selectedItem) {
+        const title = document.createElement('h3');
+        title.textContent = selectedItem.title;
+        detailPane.appendChild(title);
+
+        if (selectedItem.kind === 'image' && selectedItem.imagePath) {
+            const image = document.createElement('img');
+            image.className = 'surface-image-preview';
+            image.src = selectedItem.imagePath.startsWith('data:')
+                ? selectedItem.imagePath
+                : encodeURI(convertFileSrc(selectedItem.imagePath));
+            image.alt = selectedItem.title;
+            detailPane.appendChild(image);
+        }
+
+        const pre = document.createElement(selectedItem.kind === 'code' ? 'pre' : 'textarea');
+        pre.className = selectedItem.kind === 'code' ? 'surface-code-block' : 'surface-textarea notes';
+        if (selectedItem.kind === 'code') {
+            pre.textContent = selectedItem.text || '';
+        } else {
+            pre.value = selectedItem.text || '';
+            pre.onchange = async (event) => {
+                const item = clipboardShelf.items.find((entry) => entry.id === selectedItem.id);
+                if (!item) return;
+                item.text = event.target.value;
+                item.updatedAt = new Date().toISOString();
+                await clipboardShelf.save();
+                renderShelfView();
+            };
+        }
+        detailPane.appendChild(pre);
+
+        const actionRow = document.createElement('div');
+        actionRow.className = 'surface-action-row';
+        [
+            ['Copy', async () => clipboardShelf.copyItem(selectedItem)],
+            ['Pin', async () => { await clipboardShelf.togglePin(selectedItem.id); renderShelfView(); }],
+            ['To Library', async () => {
+                const created = await promptLibrary.addPrompt(selectedItem.text || selectedItem.title, selectedItem.title, { tags: selectedItem.tags || [] });
+                libraryState.selectedPromptId = created?.id || null;
+                setActiveSection('library');
+            }],
+            ['Delete', async () => { await clipboardShelf.removeItem(selectedItem.id); shelfState.selectedItemId = null; renderShelfView(); }],
+        ].forEach(([label, handler]) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'shell-action-btn';
+            button.textContent = label;
+            button.onclick = handler;
+            actionRow.appendChild(button);
+        });
+        detailPane.appendChild(actionRow);
+    }
+
+    body.appendChild(listPane);
+    body.appendChild(detailPane);
+    root.appendChild(body);
+    shelfView.appendChild(root);
+}
+
+function renderSessionsView() {
+    sessionsView.innerHTML = '';
+    const root = createSurfaceScaffold('Sessions', 'Restore and inspect the active workspace state without turning sessions into a platform feature.');
+    const body = document.createElement('div');
+    body.className = 'surface-stack';
+
+    const openTabsCard = document.createElement('div');
+    openTabsCard.className = 'surface-card';
+    openTabsCard.innerHTML = '<h3>Open Tabs</h3>';
+    const openList = document.createElement('div');
+    openList.className = 'surface-simple-list';
+    tabs.getTabs().forEach((tab) => {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'surface-simple-item';
+        row.textContent = tab.name;
+        row.onclick = () => {
+            setActiveSection('workspace');
+            switchTab(tab.path);
+        };
+        openList.appendChild(row);
+    });
+    openTabsCard.appendChild(openList);
+    body.appendChild(openTabsCard);
+
+    const restoreCard = document.createElement('div');
+    restoreCard.className = 'surface-card';
+    restoreCard.innerHTML = `
+        <h3>Session Restore</h3>
+        <p>Workspace, temp tabs, and open file-backed tabs persist across restarts. Active path: ${currentFilePath || 'none'}.</p>
+    `;
+    body.appendChild(restoreCard);
+
+    root.appendChild(body);
+    sessionsView.appendChild(root);
+}
+
+function renderSearchView() {
+    searchView.innerHTML = '';
+    const root = createSurfaceScaffold('Search', 'Search is cross-asset and operational, not a separate analytics product.');
+    const body = document.createElement('div');
+    body.className = 'surface-stack';
+
+    const toolbar = document.createElement('div');
+    toolbar.className = 'surface-action-row';
+    const queryInput = document.createElement('input');
+    queryInput.className = 'surface-search-input grow';
+    queryInput.placeholder = 'Search prompts, shelf, tabs, and files';
+    queryInput.value = searchState.query;
+    queryInput.oninput = (event) => {
+        searchState.query = event.target.value;
+        renderSearchView();
+    };
+    toolbar.appendChild(queryInput);
+
+    const filter = document.createElement('select');
+    filter.className = 'surface-select';
+    ['all', 'prompt', 'shelf', 'tab', 'file'].forEach((value) => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = value;
+        option.selected = searchState.filter === value;
+        filter.appendChild(option);
+    });
+    filter.onchange = (event) => {
+        searchState.filter = event.target.value;
+        renderSearchView();
+    };
+    toolbar.appendChild(filter);
+    body.appendChild(toolbar);
+
+    const results = document.createElement('div');
+    results.className = 'surface-list';
+    getSearchResults().forEach((result) => {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'surface-list-item';
+        item.innerHTML = `<div class="surface-list-title">${result.title}</div><div class="surface-list-meta">${result.type} · ${result.subtitle}</div>`;
+        item.onclick = async () => {
+            if (result.type === 'prompt') {
+                libraryState.selectedPromptId = result.id;
+                setActiveSection('library');
+            } else if (result.type === 'shelf') {
+                shelfState.selectedItemId = result.id;
+                setActiveSection('shelf');
+            } else if (result.type === 'tab') {
+                setActiveSection('workspace');
+                await switchTab(result.payload.path);
+            } else if (result.type === 'file') {
+                setActiveSection('workspace');
+                await openPathWithUnsavedCheck(result.payload, 'open a searched file');
+            }
+        };
+        results.appendChild(item);
+    });
+
+    if (!results.children.length) {
+        const empty = document.createElement('div');
+        empty.className = 'surface-empty';
+        empty.textContent = searchState.query ? 'No matches.' : 'Start typing to search across active assets.';
+        results.appendChild(empty);
+    }
+
+    body.appendChild(results);
+    root.appendChild(body);
+    searchView.appendChild(root);
+}
+
+function renderSettingsView() {
+    settingsView.innerHTML = '';
+    const root = createSurfaceScaffold('Settings', 'Keep settings focused on reliable editing, preview, restore, and output behavior.');
+    const form = document.createElement('div');
+    form.className = 'surface-meta-grid settings-grid';
+
+    const fields = [
+        ['Editor Font Size', 'editorFontSize', 'number'],
+        ['XML Wrapper Tag', 'xmlWrapperTag', 'text'],
+    ];
+
+    fields.forEach(([label, key, type]) => {
+        const field = document.createElement('label');
+        field.className = 'surface-meta-field';
+        const title = document.createElement('span');
+        title.textContent = label;
+        const input = document.createElement('input');
+        input.className = 'surface-input';
+        input.type = type;
+        input.value = prefs.get(key);
+        input.onchange = (event) => prefs.set(key, type === 'number' ? Number(event.target.value) : event.target.value);
+        field.appendChild(title);
+        field.appendChild(input);
+        form.appendChild(field);
+    });
+
+    [
+        ['syncScroll', 'Sync preview scroll'],
+        ['renderFrontmatter', 'Render frontmatter cards'],
+        ['alwaysReload', 'Always reload on external change'],
+        ['promptOnExternalChange', 'Prompt when file changes externally'],
+        ['includeFrontmatterInCopyLLM', 'Include frontmatter in LLM copy'],
+    ].forEach(([key, label]) => {
+        const field = document.createElement('label');
+        field.className = 'surface-toggle';
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = !!prefs.get(key);
+        input.onchange = (event) => prefs.set(key, event.target.checked);
+        const span = document.createElement('span');
+        span.textContent = label;
+        field.appendChild(input);
+        field.appendChild(span);
+        form.appendChild(field);
+    });
+
+    root.appendChild(form);
+    settingsView.appendChild(root);
+}
+
+function refreshWorkbenchSurfaces() {
+    refreshSidebarCollections();
+    updateTopbar();
+    if (activeSection === 'library') renderLibraryView();
+    if (activeSection === 'shelf') renderShelfView();
+    if (activeSection === 'sessions') renderSessionsView();
+    if (activeSection === 'search') renderSearchView();
+    if (activeSection === 'settings') renderSettingsView();
 }
 
 async function createTempTabWithContent(content, labelPrefix = null) {
@@ -508,7 +1114,7 @@ async function createTempTabWithContent(content, labelPrefix = null) {
     await switchTab(path);
     await persistTempSession();
     await maybePromptTempTabCleanup();
-    refreshSidebarCollections();
+    refreshWorkbenchSurfaces();
 }
 
 async function createTempTab() {
@@ -567,7 +1173,85 @@ document.addEventListener('drop', (e) => {
 });
 
 // DOM Elements
-const app = document.getElementById('app');
+const shell = document.getElementById('app');
+shell.className = 'app-shell';
+
+const navRail = document.createElement('aside');
+navRail.className = 'nav-rail';
+
+const navBrand = document.createElement('div');
+navBrand.className = 'nav-brand';
+navBrand.innerHTML = `
+    <div class="nav-brand-mark">A</div>
+    <div class="nav-brand-copy">
+        <div class="nav-brand-title">AgentPad</div>
+        <div class="nav-brand-subtitle">Workbench v1</div>
+    </div>
+`;
+navRail.appendChild(navBrand);
+
+const sectionOrder = ['workspace', 'library', 'shelf', 'sessions', 'search', 'settings'];
+const sectionLabels = {
+    workspace: 'Workspace',
+    library: 'Library',
+    shelf: 'Shelf',
+    sessions: 'Sessions',
+    search: 'Search',
+    settings: 'Settings',
+};
+let activeSection = 'workspace';
+const navButtons = new Map();
+
+const shellMain = document.createElement('div');
+shellMain.className = 'shell-main';
+
+const shellTopbar = document.createElement('header');
+shellTopbar.className = 'shell-topbar';
+
+const shellTopbarTitle = document.createElement('div');
+shellTopbarTitle.className = 'shell-topbar-title';
+
+const shellTopbarMeta = document.createElement('div');
+shellTopbarMeta.className = 'shell-topbar-meta';
+
+const shellTopbarActions = document.createElement('div');
+shellTopbarActions.className = 'shell-topbar-actions';
+
+shellTopbar.appendChild(shellTopbarTitle);
+shellTopbar.appendChild(shellTopbarMeta);
+shellTopbar.appendChild(shellTopbarActions);
+
+const contentDeck = document.createElement('div');
+contentDeck.className = 'content-deck';
+
+const app = document.createElement('div');
+app.className = 'content-view workspace-layout active';
+contentDeck.appendChild(app);
+
+const libraryView = document.createElement('section');
+libraryView.className = 'content-view section-view';
+contentDeck.appendChild(libraryView);
+
+const shelfView = document.createElement('section');
+shelfView.className = 'content-view section-view';
+contentDeck.appendChild(shelfView);
+
+const sessionsView = document.createElement('section');
+sessionsView.className = 'content-view section-view';
+contentDeck.appendChild(sessionsView);
+
+const searchView = document.createElement('section');
+searchView.className = 'content-view section-view';
+contentDeck.appendChild(searchView);
+
+const settingsView = document.createElement('section');
+settingsView.className = 'content-view section-view';
+contentDeck.appendChild(settingsView);
+
+shellMain.appendChild(shellTopbar);
+shellMain.appendChild(contentDeck);
+shell.appendChild(navRail);
+shell.appendChild(shellMain);
 
 const editorContainer = document.createElement('div');
 editorContainer.className = 'editor-pane';
@@ -614,7 +1298,7 @@ dropZone.innerHTML = `
         <svg class="drop-zone-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
         </svg>
-        <div class="drop-zone-text">Drop Markdown file to open</div>
+        <div class="drop-zone-text">Drop markdown or YAML file to open</div>
     </div>
 `;
 app.appendChild(dropZone);
@@ -686,9 +1370,9 @@ codeBtn.onclick = () => setViewMode(VIEW_MODES.EDITOR);
 codeBtn.title = 'Raw View (Cmd+E)';
 
 const shelfBtn = document.createElement('button');
-shelfBtn.textContent = 'Shelf';
+shelfBtn.textContent = 'Panel';
 shelfBtn.className = 'btn';
-shelfBtn.title = 'Toggle Clipboard Shelf (Cmd+Shift+K). Add clipboard: Cmd+Shift+V, selection: Cmd+Shift+Y, search: Cmd+Shift+J, save prompt: Cmd+Shift+G';
+shelfBtn.title = 'Toggle shelf panel (Cmd+Shift+K). Add clipboard: Cmd+Shift+V, selection: Cmd+Shift+Y, search: Cmd+Shift+J, save prompt: Cmd+Shift+G';
 shelfBtn.onclick = () => clipboardShelf.toggle();
 
 controls.appendChild(previewBtn);
@@ -709,6 +1393,106 @@ const controlsResizeObserver = new ResizeObserver(() => syncControlsLayout());
 controlsResizeObserver.observe(controls);
 window.addEventListener('resize', syncControlsLayout);
 setTimeout(syncControlsLayout, 0);
+
+const sectionViews = {
+    workspace: app,
+    library: libraryView,
+    shelf: shelfView,
+    sessions: sessionsView,
+    search: searchView,
+    settings: settingsView,
+};
+
+let libraryState = { query: '', category: 'all', selectedPromptId: null };
+let shelfState = { query: '', selectedItemId: null };
+let searchState = { query: '', filter: 'all' };
+
+function renderNavRail() {
+    Array.from(navRail.querySelectorAll('.nav-button')).forEach((node) => node.remove());
+    sectionOrder.forEach((section) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `nav-button ${activeSection === section ? 'active' : ''}`;
+        button.textContent = sectionLabels[section];
+        button.onclick = () => setActiveSection(section);
+        navRail.appendChild(button);
+        navButtons.set(section, button);
+    });
+}
+
+function updateTopbar() {
+    const currentDoc = getActiveDocument();
+    const activeLabel = sectionLabels[activeSection];
+    shellTopbarTitle.textContent = activeLabel;
+
+    if (activeSection === 'workspace') {
+        shellTopbarMeta.textContent = currentDoc
+            ? `${currentDoc.displayName || UNTITLED_TITLE} · ${viewMode}`
+            : 'Open, edit, preview, and stage working documents.';
+    } else if (activeSection === 'library') {
+        shellTopbarMeta.textContent = 'Reusable prompts and assets for active work.';
+    } else if (activeSection === 'shelf') {
+        shellTopbarMeta.textContent = 'Persistent capture and staging space for text, code, and images.';
+    } else if (activeSection === 'sessions') {
+        shellTopbarMeta.textContent = 'Current workspace state and recently restored tabs.';
+    } else if (activeSection === 'search') {
+        shellTopbarMeta.textContent = 'Unified search across prompts, shelf items, tabs, and recent files.';
+    } else {
+        shellTopbarMeta.textContent = 'Core workbench settings and defaults.';
+    }
+
+    shellTopbarActions.innerHTML = '';
+    const actionConfigs = {
+        workspace: [
+            { label: 'Open', onClick: () => openFile() },
+            { label: 'New Tab', onClick: () => createTempTab() },
+            { label: 'Library', onClick: () => setActiveSection('library') },
+        ],
+        library: [
+            { label: 'New Prompt', onClick: () => createPromptFromCurrent() },
+            { label: 'Shelf', onClick: () => setActiveSection('shelf') },
+        ],
+        shelf: [
+            { label: 'Add Clipboard', onClick: () => clipboardShelf.addFromClipboard() },
+            { label: 'Workspace', onClick: () => setActiveSection('workspace') },
+        ],
+        sessions: [
+            { label: 'Workspace', onClick: () => setActiveSection('workspace') },
+        ],
+        search: [
+            { label: 'Library', onClick: () => setActiveSection('library') },
+            { label: 'Shelf', onClick: () => setActiveSection('shelf') },
+        ],
+        settings: [
+            { label: 'Workspace', onClick: () => setActiveSection('workspace') },
+        ],
+    };
+
+    (actionConfigs[activeSection] || []).forEach(({ label, onClick }) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'shell-action-btn';
+        button.textContent = label;
+        button.onclick = onClick;
+        shellTopbarActions.appendChild(button);
+    });
+}
+
+function setActiveSection(section) {
+    activeSection = section;
+    Object.entries(sectionViews).forEach(([key, view]) => {
+        view.classList.toggle('active', key === section);
+    });
+    renderNavRail();
+    updateTopbar();
+    renderLibraryView();
+    renderShelfView();
+    renderSessionsView();
+    renderSearchView();
+    renderSettingsView();
+}
+
+renderNavRail();
 
 // State (moved to top)
 const VIEW_MODES = {
@@ -883,6 +1667,26 @@ showOnboarding();
     await ensureScratchpadTab();
 
     const session = await loadTempSession();
+    for (const fileTab of session.fileTabs || []) {
+        try {
+            const content = await readTextFile(fileTab.path);
+            openDocuments.set(fileTab.path, {
+                content,
+                lastSavedContent: content,
+                isDirty: false,
+                displayName: fileTab.displayName || getBasename(fileTab.path),
+                updatedAt: Date.now()
+            });
+            tabs.addTab(fileTab.path, {
+                name: fileTab.displayName || getBasename(fileTab.path),
+                closable: true,
+                activate: false
+            });
+        } catch (err) {
+            console.warn('Skipping missing session file tab:', fileTab.path, err);
+        }
+    }
+
     for (const tab of session.tempTabs) {
         openDocuments.set(tab.path, {
             content: tab.content || '',
@@ -907,6 +1711,7 @@ showOnboarding();
     await persistTempSession();
     refreshSidebarCollections();
     postRenderUpdate(editor.state.doc.toString());
+    setActiveSection('workspace');
 })();
 
 
@@ -962,11 +1767,11 @@ sidebar = new Sidebar(sidebarContainer, {
 });
 
 clipboardShelf.onChange(() => {
-    refreshSidebarCollections();
+    refreshWorkbenchSurfaces();
 });
 
 promptLibrary.onChange(() => {
-    refreshSidebarCollections();
+    refreshWorkbenchSurfaces();
 });
 
 refreshSidebarCollections();
@@ -1007,6 +1812,12 @@ document.addEventListener('mouseup', () => {
 (async function registerEventListeners() {
     try {
         console.log('Registering Tauri event listeners...');
+
+        if (!isTauriRuntime) {
+            console.log('Running without Tauri runtime; native event listeners disabled.');
+            await setWindowTitle('AgentPad');
+            return;
+        }
 
         // Menu Events
         await listen('menu-open', () => openFile());
@@ -1345,10 +2156,10 @@ ${bodyContent}
             if (Array.isArray(paths) && paths.length > 0) {
                 const path = paths[0];
                 console.log('Processing dropped file:', path);
-                if (path.endsWith('.md') || path.endsWith('.markdown') || path.endsWith('.txt')) {
+                if (/\.(md|markdown|txt|ya?ml)$/i.test(path)) {
                     await openPathWithUnsavedCheck(path, 'open the dropped file');
                 } else {
-                    alert("File type not supported. Please drop a .md, .markdown, or .txt file.");
+                    alert("File type not supported. Please drop a markdown, text, or YAML file.");
                 }
             } else {
                 console.warn('Drag-drop event received but no paths found');
@@ -1370,9 +2181,9 @@ ${bodyContent}
         if (launchPath) {
             console.log('Opening launch file:', launchPath);
             await openPathWithUnsavedCheck(launchPath, 'open the launch file');
-        } else {
+        } else if (!currentFilePath || !openDocuments.has(currentFilePath)) {
             // Set default title if no file loaded
-            await setWindowTitle('Untitled');
+            await setWindowTitle(UNTITLED_TITLE);
         }
     } catch (err) {
         console.error('Failed to register event listeners:', err);
@@ -1516,6 +2327,7 @@ function showRecentFilesModal() {
 }
 
 async function startWatching(path) {
+    if (!isTauriRuntime) return;
     try {
         await invoke('watch_file', { path });
     } catch (e) {
@@ -1571,13 +2383,23 @@ async function switchTab(path) {
         // Update Title
         const title = isVirtualTabPath(path) ? (doc.displayName || UNTITLED_TITLE) : path;
         await setWindowTitle(title);
+        statusBar.updateSaveTarget(
+            isScratchpadPath(path)
+                ? 'Workspace (auto)'
+                : isTempTabPath(path)
+                    ? `${doc.displayName || 'Temp'} (session)`
+                    : getBasename(path),
+            isVirtualTabPath(path) ? '' : path
+        );
 
         // Add to recent
         if (!isVirtualTabPath(path)) {
             addToRecent(path);
+            await startWatching(path);
         }
 
         await persistTempSession();
+        updateTopbar();
     }
 }
 
@@ -1614,7 +2436,7 @@ async function closeTab(path) {
     }
 
     await persistTempSession();
-    refreshSidebarCollections();
+    refreshWorkbenchSurfaces();
 }
 
 async function loadFile(path) {
@@ -1658,6 +2480,7 @@ async function loadFile(path) {
         tabs.setDirty(path, false);
 
         await setWindowTitle(path);
+        statusBar.updateSaveTarget(getBasename(path), path);
 
         // Add to recent files
         addToRecent(path);
@@ -1665,6 +2488,7 @@ async function loadFile(path) {
         // Start watcher
         await startWatching(path);
         await persistTempSession();
+        refreshWorkbenchSurfaces();
 
     } catch (err) {
         console.error('Failed to load file:', err);
@@ -1675,10 +2499,12 @@ async function loadFile(path) {
 // File Operations
 async function openFile() {
     try {
-        if (!(await ensureCanDiscardUnsavedChanges('open another file'))) return;
-
+        if (!isTauriRuntime) {
+            clipboardShelf.toast('Open file is available in the desktop app runtime.', 'warn');
+            return;
+        }
         const selected = await open({
-            filters: [{ name: 'Markdown', extensions: ['md', 'markdown'] }]
+            filters: [{ name: 'Markdown & YAML', extensions: ['md', 'markdown', 'txt', 'yaml', 'yml'] }]
         });
         if (selected) {
             await loadFile(selected);
@@ -1689,6 +2515,10 @@ async function openFile() {
 }
 
 async function saveFile(saveAs = false) {
+    if (!isTauriRuntime && (!currentFilePath || isVirtualTabPath(currentFilePath) || saveAs)) {
+        clipboardShelf.toast('Save As is available in the desktop app runtime.', 'warn');
+        return false;
+    }
     const content = editor.state.doc.toString();
     const savingVirtual = isVirtualTabPath(currentFilePath);
     const savingScratch = isScratchpadPath(currentFilePath);
@@ -1696,7 +2526,7 @@ async function saveFile(saveAs = false) {
     if (!currentFilePath || saveAs || savingVirtual) {
         // Save As
         const selected = await save({
-            filters: [{ name: 'Markdown', extensions: ['md'] }]
+            filters: [{ name: 'Markdown & YAML', extensions: ['md', 'markdown', 'txt', 'yaml', 'yml'] }]
         });
         if (selected) {
             if (savingScratch) {
@@ -1818,7 +2648,7 @@ async function handleImagePaste(view, file) {
         const buffer = await file.arrayBuffer();
         const uint8Array = new Uint8Array(buffer);
 
-        if (isVirtualTarget) {
+        if (isVirtualTarget && isTauriRuntime) {
             // Scratch/Temp workflow: save image in app storage and keep markdown lightweight.
             const imagesDir = await getVirtualImagesDirPath();
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -1842,6 +2672,19 @@ async function handleImagePaste(view, file) {
                 clipboardShelf.toast('Image embedded in note');
             }
 
+            view.dispatch(view.state.replaceSelection(`\n![Image](${markdownPath})\n`));
+            if (viewMode === VIEW_MODES.EDITOR) {
+                setViewMode(VIEW_MODES.SPLIT, { ratio: 25 });
+            }
+            return;
+        } else if (isVirtualTarget && !isTauriRuntime) {
+            const blob = new Blob([uint8Array], { type: file.type || 'image/png' });
+            markdownPath = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject(reader.error || new Error('Failed to read image'));
+                reader.readAsDataURL(blob);
+            });
             view.dispatch(view.state.replaceSelection(`\n![Image](${markdownPath})\n`));
             if (viewMode === VIEW_MODES.EDITOR) {
                 setViewMode(VIEW_MODES.SPLIT, { ratio: 25 });

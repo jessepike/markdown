@@ -1,17 +1,11 @@
 import { appConfigDir, join } from '@tauri-apps/api/path';
-import { exists, mkdir, readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
+import { exists, mkdir, readTextFile, writeTextFile, writeFile } from '@tauri-apps/plugin-fs';
+import { createShelfRecord, matchesSearch } from './models.js';
 
 const SHELF_FILE = 'clipboard-shelf.json';
 const MAX_ITEMS = 100;
-
-function createTitle(text) {
-    const firstLine = text.split(/\r?\n/).find(Boolean) || 'Untitled';
-    return firstLine.length > 42 ? `${firstLine.slice(0, 42)}...` : firstLine;
-}
-
-function nowIso() {
-    return new Date().toISOString();
-}
+const WEB_SHELF_KEY = 'agentpad-web-shelf';
+const isTauriRuntime = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 function isExpired(item) {
     if (!item.expiresAt) return false;
@@ -63,6 +57,11 @@ export class ClipboardShelf {
 
     async init(container) {
         this.container = container;
+        if (!isTauriRuntime) {
+            await this.load();
+            this.ensureToastHost();
+            return;
+        }
         const configDir = await appConfigDir();
         if (!(await exists(configDir))) {
             await mkdir(configDir, { recursive: true });
@@ -110,22 +109,24 @@ export class ClipboardShelf {
 
     async load() {
         try {
+            if (!isTauriRuntime) {
+                const raw = localStorage.getItem(WEB_SHELF_KEY);
+                const parsed = raw ? JSON.parse(raw) : [];
+                if (Array.isArray(parsed)) {
+                    this.items = parsed
+                        .map(item => createShelfRecord(item))
+                        .filter(item => item.kind === 'image' || item.text.trim().length > 0);
+                }
+                this.emitChange();
+                return;
+            }
             if (!(await exists(this.path))) return;
             const raw = await readTextFile(this.path);
             const parsed = JSON.parse(raw);
             if (Array.isArray(parsed)) {
                 this.items = parsed
-                    .map(item => ({
-                        id: item.id || Date.now().toString(36),
-                        title: item.title || createTitle(item.text || ''),
-                        text: item.text || '',
-                        source: item.source || 'manual',
-                        createdAt: item.createdAt || nowIso(),
-                        pinned: !!item.pinned,
-                        sensitive: !!item.sensitive,
-                        expiresAt: item.expiresAt || null
-                    }))
-                    .filter(item => item.text.trim().length > 0);
+                    .map(item => createShelfRecord(item))
+                    .filter(item => item.kind === 'image' || item.text.trim().length > 0);
 
                 await this.purgeExpired('Expired sensitive notes removed');
             }
@@ -137,6 +138,11 @@ export class ClipboardShelf {
 
     async save() {
         try {
+            if (!isTauriRuntime) {
+                localStorage.setItem(WEB_SHELF_KEY, JSON.stringify(this.items, null, 2));
+                this.emitChange();
+                return;
+            }
             if (!this.path) return;
             await writeTextFile(this.path, JSON.stringify(this.items, null, 2));
             this.emitChange();
@@ -167,21 +173,75 @@ export class ClipboardShelf {
 
         await this.purgeExpired();
 
-        const item = {
-            id: Date.now().toString(36),
-            title: createTitle(text),
+        const item = createShelfRecord({
+            ...options,
             text,
             source,
-            createdAt: nowIso(),
-            pinned: false,
             sensitive: !!options.sensitive,
-            expiresAt: options.expiresAt || this.parseTtlToExpiresAt(options.ttlMinutes)
-        };
+            expiresAt: options.expiresAt || this.parseTtlToExpiresAt(options.ttlMinutes),
+        });
 
         this.items = [item, ...this.items].slice(0, MAX_ITEMS);
         await this.save();
         this.renderItems();
         this.toast('Saved to Shelf');
+    }
+
+    async addImage(file, options = {}) {
+        if (!file) return null;
+
+        await this.purgeExpired();
+
+        if (!isTauriRuntime) {
+            const dataUrl = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject(reader.error || new Error('Failed to read image'));
+                reader.readAsDataURL(file);
+            });
+            const item = createShelfRecord({
+                ...options,
+                kind: 'image',
+                title: options.title || file.name || 'Image',
+                text: options.text || '',
+                source: options.source || 'clipboard',
+                imagePath: dataUrl,
+                mimeType: file.type || null,
+            });
+            this.items = [item, ...this.items].slice(0, MAX_ITEMS);
+            await this.save();
+            this.renderItems();
+            this.toast('Image saved to Shelf');
+            return item;
+        }
+
+        const configDir = await appConfigDir();
+        const imagesDir = await join(configDir, 'shelf-images');
+        if (!(await exists(imagesDir))) {
+            await mkdir(imagesDir, { recursive: true });
+        }
+
+        const extension = (file.name?.split('.').pop() || file.type?.split('/').pop() || 'png').replace(/[^a-zA-Z0-9]/g, '') || 'png';
+        const filename = `shelf-${Date.now().toString(36)}.${extension}`;
+        const imagePath = await join(imagesDir, filename);
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        await writeFile(imagePath, bytes);
+
+        const item = createShelfRecord({
+            ...options,
+            kind: 'image',
+            title: options.title || file.name || 'Image',
+            text: options.text || '',
+            source: options.source || 'clipboard',
+            imagePath,
+            mimeType: file.type || null,
+        });
+
+        this.items = [item, ...this.items].slice(0, MAX_ITEMS);
+        await this.save();
+        this.renderItems();
+        this.toast('Image saved to Shelf');
+        return item;
     }
 
     async addFromClipboard(options = {}) {
@@ -255,9 +315,7 @@ export class ClipboardShelf {
     getVisibleItems() {
         const filtered = this.items.filter(item => {
             if (isExpired(item)) return false;
-            if (!this.searchQuery) return true;
-            const hay = `${item.title}\n${item.text}\n${item.source}`.toLowerCase();
-            return hay.includes(this.searchQuery);
+            return matchesSearch(item, this.searchQuery, [item.source, item.kind]);
         });
 
         return filtered.sort((a, b) => {
@@ -275,7 +333,7 @@ export class ClipboardShelf {
         header.className = 'clipboard-shelf-header';
 
         const title = document.createElement('h3');
-        title.textContent = 'Clipboard Shelf';
+        title.textContent = 'Shelf';
         header.appendChild(title);
 
         const headerActions = document.createElement('div');

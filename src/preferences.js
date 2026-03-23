@@ -2,6 +2,8 @@ import { appConfigDir, join } from '@tauri-apps/api/path';
 import { readTextFile, writeTextFile, mkdir, exists } from '@tauri-apps/plugin-fs';
 
 const SETTINGS_FILE = 'settings.json';
+const WEB_SETTINGS_KEY = 'agentpad-web-settings';
+const isTauriRuntime = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 const DEFAULTS = {
     xmlWrapperTag: 'document',
@@ -26,6 +28,10 @@ class PreferencesManager {
 
     async init() {
         try {
+            if (!isTauriRuntime) {
+                await this.load();
+                return;
+            }
             const configDir = await appConfigDir();
             this.configPath = await join(configDir, SETTINGS_FILE);
 
@@ -43,6 +49,13 @@ class PreferencesManager {
 
     async load() {
         try {
+            if (!isTauriRuntime) {
+                const content = localStorage.getItem(WEB_SETTINGS_KEY);
+                const loaded = content ? JSON.parse(content) : {};
+                this.settings = { ...DEFAULTS, ...loaded };
+                this.notifyListeners();
+                return;
+            }
             if (await exists(this.configPath)) {
                 const content = await readTextFile(this.configPath);
                 const loaded = JSON.parse(content);
@@ -59,6 +72,11 @@ class PreferencesManager {
 
     async save() {
         try {
+            if (!isTauriRuntime) {
+                localStorage.setItem(WEB_SETTINGS_KEY, JSON.stringify(this.settings, null, 2));
+                this.notifyListeners();
+                return;
+            }
             if (!this.configPath) return;
             await writeTextFile(this.configPath, JSON.stringify(this.settings, null, 2));
             this.notifyListeners();

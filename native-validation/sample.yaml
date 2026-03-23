@@ -1,0 +1,5 @@
+name: agentpad
+mode: native-validation
+items:
+  - first
+  - second

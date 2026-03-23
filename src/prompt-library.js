@@ -1,17 +1,11 @@
 import { appConfigDir, join } from '@tauri-apps/api/path';
 import { exists, mkdir, readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
+import { createPromptRecord, matchesSearch, nowIso, normalizeTags } from './models.js';
 
 const PROMPTS_FILE = 'prompt-library.json';
 const MAX_PROMPTS = 200;
-
-function nowIso() {
-    return new Date().toISOString();
-}
-
-function createTitle(text) {
-    const firstLine = text.split(/\r?\n/).find(Boolean) || 'Untitled Prompt';
-    return firstLine.length > 48 ? `${firstLine.slice(0, 48)}...` : firstLine;
-}
+const WEB_PROMPTS_KEY = 'agentpad-web-prompt-library';
+const isTauriRuntime = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 export class PromptLibrary {
     constructor() {
@@ -37,6 +31,10 @@ export class PromptLibrary {
     }
 
     async init() {
+        if (!isTauriRuntime) {
+            await this.load();
+            return;
+        }
         const configDir = await appConfigDir();
         if (!(await exists(configDir))) {
             await mkdir(configDir, { recursive: true });
@@ -47,6 +45,15 @@ export class PromptLibrary {
 
     async load() {
         try {
+            if (!isTauriRuntime) {
+                const raw = localStorage.getItem(WEB_PROMPTS_KEY);
+                const parsed = raw ? JSON.parse(raw) : [];
+                this.items = Array.isArray(parsed)
+                    ? parsed.map(entry => createPromptRecord(entry)).filter(entry => entry.text.trim().length > 0).slice(0, MAX_PROMPTS)
+                    : [];
+                this.emitChange();
+                return;
+            }
             if (!this.path || !(await exists(this.path))) {
                 this.items = [];
                 this.emitChange();
@@ -61,14 +68,7 @@ export class PromptLibrary {
             }
 
             this.items = parsed
-                .map(entry => ({
-                    id: entry.id || Date.now().toString(36),
-                    title: entry.title || createTitle(entry.text || ''),
-                    text: entry.text || '',
-                    createdAt: entry.createdAt || nowIso(),
-                    updatedAt: entry.updatedAt || entry.createdAt || nowIso(),
-                    pinned: !!entry.pinned
-                }))
+                .map(entry => createPromptRecord(entry))
                 .filter(entry => entry.text.trim().length > 0)
                 .slice(0, MAX_PROMPTS);
             this.emitChange();
@@ -81,6 +81,11 @@ export class PromptLibrary {
 
     async save() {
         try {
+            if (!isTauriRuntime) {
+                localStorage.setItem(WEB_PROMPTS_KEY, JSON.stringify(this.items, null, 2));
+                this.emitChange();
+                return;
+            }
             if (!this.path) return;
             await writeTextFile(this.path, JSON.stringify(this.items, null, 2));
             this.emitChange();
@@ -96,20 +101,49 @@ export class PromptLibrary {
         });
     }
 
-    async addPrompt(text, title = null) {
+    async addPrompt(text, title = null, metadata = {}) {
         if (!text || !text.trim()) return null;
-        const now = nowIso();
-        const prompt = {
-            id: Date.now().toString(36),
-            title: (title || '').trim() || createTitle(text),
+        const prompt = createPromptRecord({
+            ...metadata,
+            title: (title || '').trim() || metadata.title,
             text,
-            createdAt: now,
-            updatedAt: now,
-            pinned: false
-        };
+        });
         this.items = [prompt, ...this.items].slice(0, MAX_PROMPTS);
         await this.save();
         return prompt;
+    }
+
+    getPrompt(id) {
+        return this.items.find(item => item.id === id) || null;
+    }
+
+    async updatePrompt(id, patch = {}) {
+        const prompt = this.items.find(item => item.id === id);
+        if (!prompt) return null;
+
+        Object.assign(prompt, {
+            ...patch,
+            tags: patch.tags !== undefined ? normalizeTags(patch.tags) : prompt.tags,
+            updatedAt: nowIso(),
+        });
+
+        if (!prompt.title?.trim()) {
+            prompt.title = createPromptRecord(prompt).title;
+        }
+
+        await this.save();
+        return prompt;
+    }
+
+    async duplicatePrompt(id) {
+        const prompt = this.getPrompt(id);
+        if (!prompt) return null;
+
+        return this.addPrompt(prompt.text, `${prompt.title} Copy`, {
+            category: prompt.category,
+            tags: [...prompt.tags],
+            notes: prompt.notes,
+        });
     }
 
     async removePrompt(id) {
@@ -123,6 +157,18 @@ export class PromptLibrary {
         item.pinned = !item.pinned;
         item.updatedAt = nowIso();
         await this.save();
+    }
+
+    search(query, options = {}) {
+        return this.getItems().filter((prompt) => {
+            if (options.category && options.category !== 'all' && prompt.category !== options.category) {
+                return false;
+            }
+            if (options.tag && !prompt.tags.includes(options.tag)) {
+                return false;
+            }
+            return matchesSearch(prompt, query);
+        });
     }
 }
 

@@ -1,6 +1,10 @@
 export class Tabs {
     constructor() {
         this.element = null;
+        this.scroller = null;
+        this.wrapper = null;
+        this.overflowBtn = null;
+        this.overflowMenu = null;
         this.tabs = []; // Array of { path, name, dirty, closable }
         this.activePath = null;
         this.onSwitch = null;
@@ -8,15 +12,56 @@ export class Tabs {
     }
 
     init(container, onSwitch, onClose) {
+        this.wrapper = document.createElement('div');
+        this.wrapper.className = 'tab-strip';
+        this.wrapper.setAttribute('data-tauri-drag-region', 'true');
+
+        const leftBtn = document.createElement('button');
+        leftBtn.type = 'button';
+        leftBtn.className = 'tab-scroll-btn';
+        leftBtn.textContent = '‹';
+        leftBtn.title = 'Scroll tabs left';
+        leftBtn.setAttribute('data-tauri-drag-region', 'false');
+        leftBtn.onclick = () => this.scrollTabs(-180);
+
+        this.scroller = document.createElement('div');
+        this.scroller.className = 'tab-bar-scroll';
+        this.scroller.setAttribute('data-tauri-drag-region', 'true');
+
         this.element = document.createElement('div');
         this.element.className = 'tab-bar';
         this.element.setAttribute('data-tauri-drag-region', 'true');
+
+        this.overflowBtn = document.createElement('button');
+        this.overflowBtn.type = 'button';
+        this.overflowBtn.className = 'tab-scroll-btn overflow';
+        this.overflowBtn.textContent = '⋯';
+        this.overflowBtn.title = 'Open tabs menu';
+        this.overflowBtn.setAttribute('data-tauri-drag-region', 'false');
+        this.overflowBtn.onclick = () => {
+            this.overflowMenu.classList.toggle('visible');
+        };
+
+        this.overflowMenu = document.createElement('div');
+        this.overflowMenu.className = 'tab-overflow-menu';
+        this.overflowMenu.setAttribute('data-tauri-drag-region', 'false');
+
         this.onSwitch = onSwitch;
         this.onClose = onClose;
 
-        // Insert at the top of the container (editor-pane)
-        // Check if there's already a toolbar or if we just prepend
-        container.insertBefore(this.element, container.firstChild);
+        this.scroller.appendChild(this.element);
+        this.wrapper.appendChild(leftBtn);
+        this.wrapper.appendChild(this.scroller);
+        this.wrapper.appendChild(this.overflowBtn);
+        this.wrapper.appendChild(this.overflowMenu);
+
+        document.addEventListener('click', (event) => {
+            if (!this.wrapper?.contains(event.target)) {
+                this.overflowMenu?.classList.remove('visible');
+            }
+        });
+
+        container.insertBefore(this.wrapper, container.firstChild);
     }
 
     addTab(path, options = {}) {
@@ -64,6 +109,7 @@ export class Tabs {
 
     render() {
         this.element.innerHTML = '';
+        this.overflowMenu.innerHTML = '';
         this.tabs.forEach(tab => {
             const tabEl = document.createElement('div');
             tabEl.className = `tab-item ${tab.path === this.activePath ? 'active' : ''}`;
@@ -106,7 +152,35 @@ export class Tabs {
             };
 
             this.element.appendChild(tabEl);
+
+            const overflowItem = document.createElement('button');
+            overflowItem.type = 'button';
+            overflowItem.className = 'tab-overflow-item';
+            overflowItem.textContent = tab.name;
+            overflowItem.title = tab.path;
+            overflowItem.onclick = () => {
+                this.overflowMenu.classList.remove('visible');
+                if (this.onSwitch) this.onSwitch(tab.path);
+            };
+
+            if (tab.closable) {
+                const closeLabel = document.createElement('span');
+                closeLabel.className = 'tab-overflow-close';
+                closeLabel.textContent = '×';
+                closeLabel.onclick = (e) => {
+                    e.stopPropagation();
+                    this.overflowMenu.classList.remove('visible');
+                    if (this.onClose) this.onClose(tab.path);
+                };
+                overflowItem.appendChild(closeLabel);
+            }
+
+            this.overflowMenu.appendChild(overflowItem);
         });
+    }
+
+    scrollTabs(delta) {
+        this.scroller?.scrollBy({ left: delta, behavior: 'smooth' });
     }
 }
 

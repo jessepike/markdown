@@ -56,7 +56,7 @@ export class StatusBar {
         saveLabel.textContent = 'Save:';
         const saveValue = document.createElement('span');
         saveValue.className = 'status-value';
-        saveValue.textContent = 'Scratchpad (auto)';
+        saveValue.textContent = 'Workspace (auto)';
         saveItem.appendChild(saveLabel);
         saveItem.appendChild(saveValue);
         saveGroup.appendChild(saveItem);

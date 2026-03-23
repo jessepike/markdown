@@ -14,7 +14,7 @@ self.onmessage = (e) => {
     // FORCE enable breaks by default in constructor, but we can override if we re-init.
     // simpler: just trust md was init with breaks: true above. 
 
-    let options = { renderFrontmatter: true };
+    let options = { renderFrontmatter: true, docType: 'markdown' };
 
     if (typeof e.data === 'string') {
         markdownText = e.data;
@@ -23,6 +23,12 @@ self.onmessage = (e) => {
         if (e.data.options) {
             options = { ...options, ...e.data.options };
         }
+    }
+
+    if (options.docType === 'yaml') {
+        const yamlBlock = markdownText.replace(/```/g, '\\`\\`\\`');
+        self.postMessage(md.render(`\`\`\`yaml\n${yamlBlock}\n\`\`\``));
+        return;
     }
 
     // Clean up internal AI artifacts (PUA characters)

@@ -14,7 +14,7 @@ export function showOnboarding() {
             <h2>Welcome to AgentPad</h2>
         </div>
         <div class="modal-body" style="text-align: center; line-height: 1.6;">
-            <p>A fast, beautiful, and distraction-free Markdown editor.</p>
+            <p>A local-first markdown workbench for documents, prompts, and staged fragments.</p>
             
             <div style="margin: 20px 0; text-align: left; background: var(--bg-sidebar); padding: 15px; border-radius: 8px;">
                 <h3 style="margin-top:0">Key Shortcuts</h3>
@@ -26,7 +26,7 @@ export function showOnboarding() {
                     <li><strong>Cmd+E</strong> : Editor Only</li>
                     <li><strong>Cmd+B</strong> : Toggle Sidebar</li>
                     <li><strong>Cmd+F</strong> : Find & Replace</li>
-                    <li><strong>Cmd+Shift+Space</strong> : Jump to Scratchpad</li>
+                    <li><strong>Cmd+Shift+Space</strong> : Jump to Workspace</li>
                     <li><strong>Cmd+Shift+K</strong> : Toggle Clipboard Shelf</li>
                     <li><strong>Cmd+Shift+V</strong> : Add Clipboard to Shelf</li>
                     <li><strong>Cmd+Shift+Y</strong> : Add Selection to Shelf</li>

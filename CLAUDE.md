@@ -4,7 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Pike Markdown is a desktop markdown editor built with Tauri v2, Vite, and CodeMirror 6. It features a split-pane interface with live preview, synchronized scrolling, and YAML frontmatter rendering.
+AgentPad is a local-first desktop markdown workbench built with Tauri v2, Vite, and CodeMirror 6. The current repo already includes a split-pane markdown editor with live preview, synchronized scrolling, and YAML frontmatter rendering. The approved v1 direction expands this into a workbench with Workspace, Library, Shelf, Sessions, Search, Settings, stable tabs, local persistence, autosave, and session restore.
+
+Use `AgentPad` consistently in the current build. Treat `Scratchpad` references in planning/spec docs as the same v1 product name from an earlier document set.
+
+Before major implementation work:
+- inspect the repo first
+- preserve the current stack when sensible
+- prefer incremental completion over rewrites
+- keep the product within the approved v1 workbench scope
+- test and validate critical flows before declaring work complete
 
 ## Development Commands
 
