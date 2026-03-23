@@ -122,6 +122,13 @@ export class PreferencesUI {
         reloadCheck.onchange = (e) => prefs.set('alwaysReload', e.target.checked);
         sysSec.appendChild(createRow('Always Reload on External Change', reloadCheck));
 
+        const promptExternalCheck = document.createElement('input');
+        promptExternalCheck.type = 'checkbox';
+        promptExternalCheck.className = 'prefs-toggle';
+        promptExternalCheck.checked = prefs.get('promptOnExternalChange');
+        promptExternalCheck.onchange = (e) => prefs.set('promptOnExternalChange', e.target.checked);
+        sysSec.appendChild(createRow('Prompt on External Change', promptExternalCheck));
+
         modal.appendChild(sysSec);
 
 

@@ -7,6 +7,7 @@
   ],
   "permissions": [
     "core:default",
+    "core:webview:allow-print",
     "core:event:default",
     "core:event:allow-listen",
     "core:window:allow-set-title",
@@ -28,6 +29,62 @@
     },
     {
       "identifier": "fs:allow-write-text-file",
+      "allow": [
+        {
+          "path": "$HOME/**"
+        },
+        {
+          "path": "$HOME/.*"
+        },
+        {
+          "path": "$HOME/.*/**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-write-file",
+      "allow": [
+        {
+          "path": "$HOME/**"
+        },
+        {
+          "path": "$HOME/.*"
+        },
+        {
+          "path": "$HOME/.*/**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-read-file",
+      "allow": [
+        {
+          "path": "$HOME/**"
+        },
+        {
+          "path": "$HOME/.*"
+        },
+        {
+          "path": "$HOME/.*/**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-mkdir",
+      "allow": [
+        {
+          "path": "$HOME/**"
+        },
+        {
+          "path": "$HOME/.*"
+        },
+        {
+          "path": "$HOME/.*/**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-exists",
       "allow": [
         {
           "path": "$HOME/**"

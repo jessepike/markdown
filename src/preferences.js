@@ -10,6 +10,7 @@ const DEFAULTS = {
     syncScroll: true,
     renderFrontmatter: true,
     alwaysReload: false,
+    promptOnExternalChange: false,
     includeFrontmatterInCopyLLM: false,
     sanitizationStripFrontmatter: true,
     exportIncludeTheme: true,

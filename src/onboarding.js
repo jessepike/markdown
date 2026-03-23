@@ -31,6 +31,7 @@ export function showOnboarding() {
                     <li><strong>Cmd+Shift+V</strong> : Add Clipboard to Shelf</li>
                     <li><strong>Cmd+Shift+Y</strong> : Add Selection to Shelf</li>
                     <li><strong>Cmd+Shift+J</strong> : Focus Shelf Search</li>
+                    <li><strong>Cmd+Shift+G</strong> : Save Selection as Prompt</li>
                 </ul>
             </div>
 

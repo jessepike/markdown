@@ -4,7 +4,7 @@ import DOMPurify from 'dompurify';
 import { readTextFile, writeTextFile, stat, mkdir, writeFile, exists } from '@tauri-apps/plugin-fs';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { appConfigDir, join } from '@tauri-apps/api/path';
 import { prefs } from './preferences.js';
@@ -16,6 +16,7 @@ import { tabs } from './tabs.js';
 import { exportToDocx } from './docx-export.js';
 import { showOnboarding } from './onboarding.js';
 import { clipboardShelf } from './clipboard-shelf.js';
+import { promptLibrary } from './prompt-library.js';
 
 const RECENT_FILES_KEY = 'pike-recent-files';
 const SPLIT_RATIO_KEY = 'pike-split-ratio';
@@ -27,12 +28,20 @@ const UNTITLED_TITLE = 'Untitled';
 const SCRATCH_TAB_PATH = 'scratch://untitled';
 const TEMP_TAB_PREFIX = 'scratch://temp-';
 const SCRATCH_FILE = 'scratchpad.md';
+const TEMP_SESSION_FILE = 'temp-tabs-session.json';
+const TEMP_TAB_WARNING_THRESHOLD = 50;
+const APP_IMAGE_MARKDOWN_PREFIX = 'app-images/';
 
 // Helper function to set window title using Tauri API
 async function setWindowTitle(title) {
     try {
+        const safeTitle = typeof title === 'string' && title.trim().length > 0
+            ? title
+            : UNTITLED_TITLE;
+        const docTitle = safeTitle.split(/[/\\]/).pop() || safeTitle;
+        document.title = docTitle;
         const window = getCurrentWindow();
-        await window.setTitle(title);
+        await window.setTitle(safeTitle);
     } catch (err) {
         console.error('Failed to set window title:', err);
     }
@@ -55,7 +64,12 @@ let lastSavedContent = ''; // Debounce self-edits
 let lastKnownMtime = 0;
 let scratchStoragePath = null;
 let scratchPersistTimer = null;
+let tempSessionStoragePath = null;
+let tempSessionPersistTimer = null;
+let virtualImagesDirPath = null;
 let tempTabCounter = 1;
+let didWarnTempTabs = false;
+let sidebar = null;
 
 function isScratchpadPath(path) {
     return path === SCRATCH_TAB_PATH;
@@ -92,6 +106,29 @@ async function getScratchStoragePath() {
     }
     scratchStoragePath = await join(configDir, SCRATCH_FILE);
     return scratchStoragePath;
+}
+
+async function getTempSessionStoragePath() {
+    if (tempSessionStoragePath) return tempSessionStoragePath;
+    const configDir = await appConfigDir();
+    if (!(await exists(configDir))) {
+        await mkdir(configDir, { recursive: true });
+    }
+    tempSessionStoragePath = await join(configDir, TEMP_SESSION_FILE);
+    return tempSessionStoragePath;
+}
+
+async function getVirtualImagesDirPath() {
+    if (virtualImagesDirPath) return virtualImagesDirPath;
+    const configDir = await appConfigDir();
+    if (!(await exists(configDir))) {
+        await mkdir(configDir, { recursive: true });
+    }
+    virtualImagesDirPath = await join(configDir, 'images');
+    if (!(await exists(virtualImagesDirPath))) {
+        await mkdir(virtualImagesDirPath, { recursive: true });
+    }
+    return virtualImagesDirPath;
 }
 
 async function loadScratchpadContent() {
@@ -153,11 +190,223 @@ async function ensureScratchpadTab() {
     tabs.setDirty(SCRATCH_TAB_PATH, false);
 }
 
+function getTempTabDocuments() {
+    return Array.from(openDocuments.entries())
+        .filter(([path]) => isTempTabPath(path))
+        .map(([path, doc]) => ({
+            path,
+            content: doc.content || '',
+            lastSavedContent: doc.lastSavedContent || '',
+            isDirty: !!doc.isDirty,
+            displayName: doc.displayName || getBasename(path),
+            updatedAt: doc.updatedAt || Date.now()
+        }));
+}
+
+async function persistTempSession(immediate = false) {
+    const write = async () => {
+        try {
+            const sessionPath = await getTempSessionStoragePath();
+            const payload = {
+                version: 1,
+                savedAt: Date.now(),
+                activePath: currentFilePath || SCRATCH_TAB_PATH,
+                tempTabs: getTempTabDocuments()
+            };
+            await writeTextFile(sessionPath, JSON.stringify(payload, null, 2));
+        } catch (err) {
+            console.error('Failed to persist temp tabs session:', err);
+        }
+    };
+
+    if (immediate) {
+        if (tempSessionPersistTimer) clearTimeout(tempSessionPersistTimer);
+        tempSessionPersistTimer = null;
+        await write();
+        return;
+    }
+
+    if (tempSessionPersistTimer) clearTimeout(tempSessionPersistTimer);
+    tempSessionPersistTimer = setTimeout(() => {
+        tempSessionPersistTimer = null;
+        write();
+    }, 450);
+}
+
+async function loadTempSession() {
+    try {
+        const sessionPath = await getTempSessionStoragePath();
+        if (!(await exists(sessionPath))) return { activePath: null, tempTabs: [] };
+        const raw = await readTextFile(sessionPath);
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') return { activePath: null, tempTabs: [] };
+        const tempTabs = Array.isArray(parsed.tempTabs) ? parsed.tempTabs : [];
+        return {
+            activePath: typeof parsed.activePath === 'string' ? parsed.activePath : null,
+            tempTabs: tempTabs.filter(tab => tab && typeof tab.path === 'string' && isTempTabPath(tab.path))
+        };
+    } catch (err) {
+        console.error('Failed to load temp tabs session:', err);
+        return { activePath: null, tempTabs: [] };
+    }
+}
+
+async function maybePromptTempTabCleanup() {
+    const tempTabs = getTempTabDocuments();
+    if (tempTabs.length <= TEMP_TAB_WARNING_THRESHOLD || didWarnTempTabs) return;
+    didWarnTempTabs = true;
+
+    const shouldCleanup = confirm(
+        `You have ${tempTabs.length} temporary tabs. Keep only the newest ${TEMP_TAB_WARNING_THRESHOLD}?`
+    );
+    if (!shouldCleanup) return;
+
+    tempTabs.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    const keep = new Set(tempTabs.slice(0, TEMP_TAB_WARNING_THRESHOLD).map(tab => tab.path));
+    const remove = tempTabs.filter(tab => !keep.has(tab.path)).map(tab => tab.path);
+
+    for (const path of remove) {
+        openDocuments.delete(path);
+        tabs.removeTab(path);
+    }
+
+    if (currentFilePath && !openDocuments.has(currentFilePath)) {
+        await ensureScratchpadTab();
+        await switchTab(SCRATCH_TAB_PATH);
+    }
+
+    await persistTempSession(true);
+    clipboardShelf.toast(`Trimmed temporary tabs to ${TEMP_TAB_WARNING_THRESHOLD}.`);
+}
+
+async function preparePreviewContent(content) {
+    if (typeof content !== 'string' || !content.includes(APP_IMAGE_MARKDOWN_PREFIX)) {
+        return content;
+    }
+
+    const imagesDir = await getVirtualImagesDirPath();
+    const imageLinkRegex = /(!\[[^\]]*]\()\s*app-images\/([^) \t\r\n]+)\s*(\))/g;
+    let lastIndex = 0;
+    let rewritten = '';
+    let replaced = false;
+    let match;
+
+    while ((match = imageLinkRegex.exec(content)) !== null) {
+        const [, prefix, rawName, suffix] = match;
+        const safeName = String(rawName || '')
+            .split('/')
+            .filter((segment) => segment && segment !== '.' && segment !== '..')
+            .join('/');
+
+        if (!safeName) continue;
+
+        const absoluteImagePath = await join(imagesDir, safeName);
+        const previewSrc = encodeURI(convertFileSrc(absoluteImagePath));
+        rewritten += content.slice(lastIndex, match.index);
+        // Angle brackets ensure markdown parser accepts URLs with encoded/special chars reliably.
+        rewritten += `${prefix}<${previewSrc}>${suffix}`;
+        lastIndex = match.index + match[0].length;
+        replaced = true;
+    }
+
+    if (!replaced) return content;
+    rewritten += content.slice(lastIndex);
+    return rewritten;
+}
+
 function postRenderUpdate(content) {
-    worker.postMessage({
-        content,
-        options: { renderFrontmatter: isRenderFmEnabled }
-    });
+    preparePreviewContent(content)
+        .then((preparedContent) => {
+            worker.postMessage({
+                content: preparedContent,
+                options: { renderFrontmatter: isRenderFmEnabled }
+            });
+        })
+        .catch((err) => {
+            console.error('Failed to prepare preview content:', err);
+            worker.postMessage({
+                content,
+                options: { renderFrontmatter: isRenderFmEnabled }
+            });
+        });
+}
+
+function decodeDataUrlToBytes(dataUrl) {
+    const parts = String(dataUrl).split(',');
+    if (parts.length < 2) return null;
+    const metadata = parts[0];
+    const base64Payload = parts.slice(1).join(',');
+    const mimeMatch = metadata.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64$/i);
+    if (!mimeMatch) return null;
+
+    try {
+        const binary = atob(base64Payload);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+        }
+        return { mime: mimeMatch[1].toLowerCase(), bytes };
+    } catch {
+        return null;
+    }
+}
+
+async function migrateInlineDataImages(content) {
+    if (typeof content !== 'string' || !content.includes('data:image/')) {
+        return content;
+    }
+
+    const dataImageRegex = /!\[([^\]]*)\]\((data:image\/[a-zA-Z0-9.+-]+;base64,[^)]+)\)/g;
+    const extByMime = {
+        'image/png': 'png',
+        'image/jpeg': 'jpg',
+        'image/jpg': 'jpg',
+        'image/gif': 'gif',
+        'image/webp': 'webp',
+        'image/svg+xml': 'svg',
+        'image/bmp': 'bmp',
+        'image/tiff': 'tiff',
+        'image/heic': 'heic'
+    };
+
+    const imagesDir = await getVirtualImagesDirPath();
+    let cursor = 0;
+    let rewritten = '';
+    let index = 0;
+    let match;
+
+    while ((match = dataImageRegex.exec(content)) !== null) {
+        const [fullMatch, altRaw, dataUrl] = match;
+        rewritten += content.slice(cursor, match.index);
+
+        const decoded = decodeDataUrlToBytes(dataUrl);
+        if (!decoded) {
+            rewritten += fullMatch;
+            cursor = match.index + fullMatch.length;
+            continue;
+        }
+
+        const extension = extByMime[decoded.mime] || 'png';
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const filename = `clip-migrated-${timestamp}-${index}.${extension}`;
+        index += 1;
+
+        try {
+            const fullPath = await join(imagesDir, filename);
+            await writeFile(fullPath, decoded.bytes);
+            const safeAlt = (altRaw || 'Image').replace(/\r?\n/g, ' ').trim() || 'Image';
+            rewritten += `![${safeAlt}](${APP_IMAGE_MARKDOWN_PREFIX}${filename})`;
+        } catch (err) {
+            console.warn('Failed to migrate inline image, keeping original data URL:', err);
+            rewritten += fullMatch;
+        }
+
+        cursor = match.index + fullMatch.length;
+    }
+
+    if (cursor === 0) return content;
+    rewritten += content.slice(cursor);
+    return rewritten;
 }
 
 function getCurrentContent() {
@@ -176,6 +425,7 @@ function updateDirtyState(content) {
 
     doc.content = content;
     doc.isDirty = content !== doc.lastSavedContent;
+    doc.updatedAt = Date.now();
     tabs.setDirty(currentFilePath, doc.isDirty);
 }
 
@@ -187,6 +437,7 @@ function markCurrentDocumentSaved(content) {
     doc.content = content;
     doc.lastSavedContent = content;
     doc.isDirty = false;
+    doc.updatedAt = Date.now();
     tabs.setDirty(currentFilePath, false);
 }
 
@@ -224,19 +475,44 @@ async function addSelectionToShelf() {
     await clipboardShelf.addText(selectedText, 'selection');
 }
 
-async function createTempTab() {
+function refreshSidebarCollections() {
+    if (!sidebar) return;
+    const tempTabs = Array.from(openDocuments.entries())
+        .filter(([path]) => isTempTabPath(path))
+        .map(([path, doc]) => ({
+            path,
+            displayName: doc.displayName || getBasename(path)
+        }));
+    sidebar.setData({
+        clips: clipboardShelf.getItems().slice(0, 40),
+        prompts: promptLibrary.getItems().slice(0, 40),
+        recentFiles: getRecentFiles(),
+        tempTabs
+    });
+}
+
+async function createTempTabWithContent(content, labelPrefix = null) {
     const path = `${TEMP_TAB_PREFIX}${Date.now()}`;
-    const name = getNextTempTabName();
+    const baseName = getNextTempTabName();
+    const displayName = labelPrefix ? `${labelPrefix}: ${baseName}` : baseName;
 
     openDocuments.set(path, {
-        content: '',
-        lastSavedContent: '',
+        content: content || '',
+        lastSavedContent: content || '',
         isDirty: false,
-        displayName: name
+        displayName,
+        updatedAt: Date.now()
     });
 
-    tabs.addTab(path, { name });
+    tabs.addTab(path, { name: displayName });
     await switchTab(path);
+    await persistTempSession();
+    await maybePromptTempTabCleanup();
+    refreshSidebarCollections();
+}
+
+async function createTempTab() {
+    await createTempTabWithContent('');
 }
 
 console.log('AgentPad: Main script initializing...');
@@ -300,7 +576,7 @@ editorContainer.className = 'editor-pane';
 tabs.init(editorContainer, (path) => switchTab(path), (path) => closeTab(path));
 
 const previewContainer = document.createElement('div');
-previewContainer.className = 'preview-pane single-mode';
+previewContainer.className = 'preview-pane';
 const markdownBody = document.createElement('div');
 markdownBody.className = 'markdown-body';
 previewContainer.appendChild(markdownBody);
@@ -399,8 +675,8 @@ newTabBtn.title = 'New temporary tab (Cmd+T)';
 const previewBtn = document.createElement('button');
 previewBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
 previewBtn.className = 'btn icon-btn';
-previewBtn.onclick = togglePreview;
-previewBtn.title = 'Toggle Preview (Cmd+P)';
+previewBtn.onclick = () => setViewMode(VIEW_MODES.SPLIT, { ratio: 25 });
+previewBtn.title = 'Preview Review Mode (Split, Cmd+P)';
 
 // Code View Button (Raw)
 const codeBtn = document.createElement('button');
@@ -412,15 +688,27 @@ codeBtn.title = 'Raw View (Cmd+E)';
 const shelfBtn = document.createElement('button');
 shelfBtn.textContent = 'Shelf';
 shelfBtn.className = 'btn';
-shelfBtn.title = 'Toggle Clipboard Shelf (Cmd+Shift+K). Add clipboard: Cmd+Shift+V, selection: Cmd+Shift+Y, search: Cmd+Shift+J';
+shelfBtn.title = 'Toggle Clipboard Shelf (Cmd+Shift+K). Add clipboard: Cmd+Shift+V, selection: Cmd+Shift+Y, search: Cmd+Shift+J, save prompt: Cmd+Shift+G';
 shelfBtn.onclick = () => clipboardShelf.toggle();
 
+controls.appendChild(previewBtn);
+controls.appendChild(codeBtn);
 controls.appendChild(openBtn);
 controls.appendChild(newTabBtn);
-controls.appendChild(codeBtn);
-controls.appendChild(previewBtn);
 controls.appendChild(shelfBtn);
 editorContainer.appendChild(controls);
+
+function syncControlsLayout() {
+    const tabBar = editorContainer.querySelector('.tab-bar');
+    if (!tabBar) return;
+    const extraRight = Math.max(160, controls.offsetWidth + 24);
+    tabBar.style.paddingRight = `${extraRight}px`;
+}
+
+const controlsResizeObserver = new ResizeObserver(() => syncControlsLayout());
+controlsResizeObserver.observe(controls);
+window.addEventListener('resize', syncControlsLayout);
+setTimeout(syncControlsLayout, 0);
 
 // State (moved to top)
 const VIEW_MODES = {
@@ -526,6 +814,8 @@ const editor = createEditor(editorContainer, "", (newContent) => {
 
         if (isScratchpadPath(currentFilePath) && newContent !== lastSavedContent) {
             persistScratchpad(newContent);
+        } else if (isTempTabPath(currentFilePath)) {
+            persistTempSession();
         } else if (currentFilePath && newContent !== lastSavedContent) {
             performAutoSave(newContent);
         }
@@ -588,9 +878,34 @@ showOnboarding();
         if (sel.from === sel.to) return '';
         return editor.state.doc.sliceString(sel.from, sel.to);
     });
-    await ensureScratchpadTab();
-    await switchTab(SCRATCH_TAB_PATH);
     await clipboardShelf.init(document.body);
+    await promptLibrary.init();
+    await ensureScratchpadTab();
+
+    const session = await loadTempSession();
+    for (const tab of session.tempTabs) {
+        openDocuments.set(tab.path, {
+            content: tab.content || '',
+            lastSavedContent: tab.lastSavedContent || '',
+            isDirty: !!tab.isDirty,
+            displayName: tab.displayName || getNextTempTabName(),
+            updatedAt: tab.updatedAt || Date.now()
+        });
+        tabs.addTab(tab.path, {
+            name: tab.displayName || getBasename(tab.path),
+            closable: true,
+            activate: false
+        });
+        tabs.setDirty(tab.path, !!tab.isDirty);
+    }
+
+    const restorePath = session.activePath && openDocuments.has(session.activePath)
+        ? session.activePath
+        : SCRATCH_TAB_PATH;
+    await switchTab(restorePath);
+    await maybePromptTempTabCleanup();
+    await persistTempSession();
+    refreshSidebarCollections();
     postRenderUpdate(editor.state.doc.toString());
 })();
 
@@ -631,9 +946,30 @@ editor.scrollDOM.addEventListener('scroll', () => handleSyncScroll(editor.scroll
 previewContainer.addEventListener('scroll', () => handleSyncScroll(markdownBody.parentElement, editor.scrollDOM));
 
 // Sidebar Logic
-const sidebar = new Sidebar(sidebarContainer, async (path) => {
-    await openPathWithUnsavedCheck(path, 'open a file from the sidebar');
+sidebar = new Sidebar(sidebarContainer, {
+    onFileSelect: async (path) => {
+        await openPathWithUnsavedCheck(path, 'open a file from the sidebar');
+    },
+    onClipSelect: async (clip) => {
+        await createTempTabWithContent(clip.text || '', 'Clip');
+    },
+    onPromptSelect: async (prompt) => {
+        await createTempTabWithContent(prompt.text || '', 'Prompt');
+    },
+    onTempTabSelect: async (path) => {
+        await switchTab(path);
+    }
 });
+
+clipboardShelf.onChange(() => {
+    refreshSidebarCollections();
+});
+
+promptLibrary.onChange(() => {
+    refreshSidebarCollections();
+});
+
+refreshSidebarCollections();
 
 // Sidebar Resizer
 let isSidebarResizing = false;
@@ -690,6 +1026,7 @@ document.addEventListener('mouseup', () => {
                 if (selected) {
                     // Open Folder Mode
                     await sidebar.setRoot(selected);
+                    refreshSidebarCollections();
 
                     // Show Sidebar
                     sidebarContainer.style.display = 'block';
@@ -724,6 +1061,7 @@ document.addEventListener('mouseup', () => {
             postRenderUpdate('');
             await persistScratchpad('', true);
             await setWindowTitle(UNTITLED_TITLE);
+            await persistTempSession();
         });
 
         await listen('toggle-sync-scroll', (e) => {
@@ -825,9 +1163,21 @@ document.addEventListener('mouseup', () => {
             }
         });
 
-        await listen('menu-export-pdf', () => {
-            // Print dialog handles PDF generation
-            window.print();
+        await listen('menu-export-pdf', async () => {
+            try {
+                // Ensure preview HTML is up to date before printing.
+                postRenderUpdate(editor.state.doc.toString());
+                await new Promise(resolve => setTimeout(resolve, 40));
+                await invoke('plugin:webview|print');
+            } catch (err) {
+                console.error('Native print failed, falling back to window.print():', err);
+                try {
+                    window.print();
+                } catch (fallbackErr) {
+                    console.error('window.print() failed:', fallbackErr);
+                    alert('Export to PDF failed. Try Export to HTML and print from browser.');
+                }
+            }
         });
 
         await listen('menu-export-docx', async () => {
@@ -969,6 +1319,11 @@ ${bodyContent}
                 return;
             }
 
+            // Silent mode: ignore external change notifications/prompts.
+            if (!prefs.get('promptOnExternalChange')) {
+                return;
+            }
+
             // Prompt using non-blocking UI
             const currentContent = editor.state.doc.toString();
             const activeDoc = getActiveDocument();
@@ -1025,30 +1380,23 @@ ${bodyContent}
     }
 })();
 
-// Toggle Logic
-function togglePreview() {
-    // Cycle: EDITOR -> SPLIT -> PREVIEW -> EDITOR
-    if (viewMode === VIEW_MODES.EDITOR) {
-        setViewMode(VIEW_MODES.SPLIT);
-    } else if (viewMode === VIEW_MODES.SPLIT) {
-        setViewMode(VIEW_MODES.PREVIEW);
-    } else {
-        setViewMode(VIEW_MODES.EDITOR);
-    }
-}
-
-function setViewMode(mode) {
-    viewMode = mode;
-    localStorage.setItem(VIEW_MODE_KEY, mode);
+function setViewMode(mode, options = {}) {
+    const normalizedMode = mode === VIEW_MODES.PREVIEW ? VIEW_MODES.SPLIT : mode;
+    viewMode = normalizedMode;
+    localStorage.setItem(VIEW_MODE_KEY, normalizedMode);
 
     // Reset Classes
     app.classList.remove('split-mode');
     previewContainer.classList.remove('visible', 'single-mode');
+    codeBtn.classList.remove('active');
     previewBtn.classList.remove('active');
 
-    switch (mode) {
+    switch (normalizedMode) {
         case VIEW_MODES.EDITOR:
             editorContainer.style.display = 'block';
+            editorContainer.style.width = '';
+            previewContainer.style.width = '';
+            codeBtn.classList.add('active');
             editor.focus();
             break;
         case VIEW_MODES.SPLIT:
@@ -1057,7 +1405,9 @@ function setViewMode(mode) {
 
             // Restore saved ratio or default to 50%
             const savedRatio = localStorage.getItem(SPLIT_RATIO_KEY);
-            const ratio = savedRatio ? parseFloat(savedRatio) : 50;
+            const ratio = typeof options.ratio === 'number'
+                ? options.ratio
+                : (savedRatio ? parseFloat(savedRatio) : 50);
 
             editorContainer.style.width = `${ratio}%`;
             previewContainer.style.width = `${100 - ratio}%`;
@@ -1067,15 +1417,6 @@ function setViewMode(mode) {
             // Force render on enter split
             postRenderUpdate(editor.state.doc.toString());
             editor.focus();
-            break;
-        case VIEW_MODES.PREVIEW:
-            editorContainer.style.display = 'none'; // Hide editor in full preview
-            editorContainer.style.width = ''; // Reset width styles
-            previewContainer.style.width = '';
-            previewContainer.classList.add('visible', 'single-mode');
-            previewBtn.classList.add('active');
-            // Force render on enter preview
-            postRenderUpdate(editor.state.doc.toString());
             break;
     }
 }
@@ -1102,16 +1443,18 @@ function addToRecent(path) {
     const recent = getRecentFiles();
     const updated = [path, ...recent.filter(p => p !== path)].slice(0, MAX_RECENT_FILES);
     localStorage.setItem(RECENT_FILES_KEY, JSON.stringify(updated));
+    refreshSidebarCollections();
 }
 
 // Init View Mode from Storage
 const savedViewMode = localStorage.getItem(VIEW_MODE_KEY);
 if (savedViewMode) {
-    setViewMode(savedViewMode);
+    setViewMode(savedViewMode === VIEW_MODES.PREVIEW ? VIEW_MODES.SPLIT : savedViewMode);
 }
 
 function clearRecentFiles() {
     localStorage.removeItem(RECENT_FILES_KEY);
+    refreshSidebarCollections();
     // If modal is open, refresh it (close it or show empty state)
     const existingModal = document.getElementById('recent-files-modal');
     if (existingModal) {
@@ -1191,6 +1534,7 @@ async function switchTab(path) {
         const currentContent = editor.state.doc.toString();
         doc.content = currentContent;
         doc.isDirty = currentContent !== doc.lastSavedContent;
+        doc.updatedAt = Date.now();
         tabs.setDirty(currentFilePath, doc.isDirty);
         // doc.scrollTop = ... (CodeMirror scroll state is complex, omit for MVP)
     }
@@ -1200,6 +1544,22 @@ async function switchTab(path) {
         currentFilePath = path;
         tabs.setActive(path);
         const doc = openDocuments.get(path);
+
+        if (isVirtualTabPath(path) && typeof doc.content === 'string' && doc.content.includes('data:image/')) {
+            const migratedContent = await migrateInlineDataImages(doc.content);
+            if (migratedContent !== doc.content) {
+                doc.content = migratedContent;
+                doc.lastSavedContent = migratedContent;
+                doc.isDirty = false;
+                tabs.setDirty(path, false);
+                if (isScratchpadPath(path)) {
+                    await persistScratchpad(migratedContent, true);
+                } else if (isTempTabPath(path)) {
+                    await persistTempSession(true);
+                }
+                clipboardShelf.toast('Migrated inline images to app image library');
+            }
+        }
 
         // Update Editor
         editor.dispatch({
@@ -1216,6 +1576,8 @@ async function switchTab(path) {
         if (!isVirtualTabPath(path)) {
             addToRecent(path);
         }
+
+        await persistTempSession();
     }
 }
 
@@ -1250,6 +1612,9 @@ async function closeTab(path) {
             await setWindowTitle('AgentPad');
         }
     }
+
+    await persistTempSession();
+    refreshSidebarCollections();
 }
 
 async function loadFile(path) {
@@ -1267,7 +1632,8 @@ async function loadFile(path) {
             content: content,
             lastSavedContent: content,
             isDirty: false,
-            displayName: getBasename(path)
+            displayName: getBasename(path),
+            updatedAt: Date.now()
         });
 
         // Save previous state before switching
@@ -1276,6 +1642,7 @@ async function loadFile(path) {
             const currentContent = editor.state.doc.toString();
             doc.content = currentContent;
             doc.isDirty = currentContent !== doc.lastSavedContent;
+            doc.updatedAt = Date.now();
             tabs.setDirty(currentFilePath, doc.isDirty);
         }
 
@@ -1297,6 +1664,7 @@ async function loadFile(path) {
 
         // Start watcher
         await startWatching(path);
+        await persistTempSession();
 
     } catch (err) {
         console.error('Failed to load file:', err);
@@ -1341,12 +1709,14 @@ async function saveFile(saveAs = false) {
                         content,
                         lastSavedContent: content,
                         isDirty: false,
-                        displayName: getBasename(selected)
+                        displayName: getBasename(selected),
+                        updatedAt: Date.now()
                     });
                     tabs.addTab(selected);
                     tabs.setDirty(selected, false);
                     await switchTab(selected);
                     await ensureScratchpadTab();
+                    await persistTempSession();
                     return true;
                 } catch (err) {
                     console.error('Failed to save scratchpad as file:', err);
@@ -1362,6 +1732,7 @@ async function saveFile(saveAs = false) {
                 const previousDoc = openDocuments.get(previousPath);
                 openDocuments.delete(previousPath);
                 previousDoc.displayName = getBasename(currentFilePath);
+                previousDoc.updatedAt = Date.now();
                 openDocuments.set(currentFilePath, previousDoc);
                 tabs.removeTab(previousPath);
                 tabs.addTab(currentFilePath);
@@ -1370,7 +1741,8 @@ async function saveFile(saveAs = false) {
                     content,
                     lastSavedContent: content,
                     isDirty: false,
-                    displayName: getBasename(currentFilePath)
+                    displayName: getBasename(currentFilePath),
+                    updatedAt: Date.now()
                 });
                 tabs.addTab(currentFilePath);
             }
@@ -1402,6 +1774,7 @@ async function saveFile(saveAs = false) {
 
         // Force render update
         postRenderUpdate(content);
+        await persistTempSession();
         return true;
     } catch (err) {
         console.error('Failed to save:', err);
@@ -1418,46 +1791,90 @@ async function saveFile(saveAs = false) {
 // Image Paste Handling
 async function handleImagePaste(view, file) {
     try {
-        if (!currentFilePath) {
-            alert('Please save the current file before pasting images.');
-            return;
+        let destinationDir = '';
+        let markdownPath = '';
+        const isVirtualTarget = !currentFilePath || isVirtualTabPath(currentFilePath);
+        const mime = (file?.type || '').toLowerCase();
+        const extByMime = {
+            'image/png': 'png',
+            'image/jpeg': 'jpg',
+            'image/jpg': 'jpg',
+            'image/gif': 'gif',
+            'image/webp': 'webp',
+            'image/svg+xml': 'svg',
+            'image/bmp': 'bmp',
+            'image/tiff': 'tiff',
+            'image/heic': 'heic'
+        };
+        const extension = extByMime[mime] || 'png';
+
+        if (!isVirtualTarget) {
+            // Saved file path: store in sibling assets folder for portability.
+            const pathSep = navigator.userAgent.includes('Win') ? '\\' : '/';
+            const fileDir = currentFilePath.substring(0, currentFilePath.lastIndexOf(pathSep));
+            destinationDir = `${fileDir}${pathSep}assets`;
         }
 
-        // Determine destination
-        // We'll put it in an 'assets' folder relative to the current file
-        // 1. Get current file dir
-        // Simple string manipulation for now (Node/Rust path is better, but this works for MVP)
-        const pathSep = navigator.userAgent.includes('Win') ? '\\' : '/';
-        const fileDir = currentFilePath.substring(0, currentFilePath.lastIndexOf(pathSep));
-        const assetsDir = `${fileDir}${pathSep}assets`;
-
-        // 2. Ensure assets dir exists
-        try {
-            await mkdir(assetsDir, { recursive: true });
-        } catch (e) {
-            // Ignore if exists, how to check? 
-            // writeBinaryFile might fail if dir missing?
-            // Actually, we should check existence. 
-            // Let's just try to create. 
-        }
-
-        // 3. Generate filename
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const filename = `image-${timestamp}.png`;
-        const fullPath = `${assetsDir}${pathSep}${filename}`;
-
-        // 4. Read data
         const buffer = await file.arrayBuffer();
         const uint8Array = new Uint8Array(buffer);
 
-        // 5. Write file
-        await writeFile(fullPath, uint8Array);
+        if (isVirtualTarget) {
+            // Scratch/Temp workflow: save image in app storage and keep markdown lightweight.
+            const imagesDir = await getVirtualImagesDirPath();
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const filename = `clip-${timestamp}.${extension}`;
+            const fullPath = await join(imagesDir, filename);
 
-        // 6. Insert Markdown
-        // Relative path validation: 'assets/filename.png'
-        const relativePath = `assets/${filename}`;
+            try {
+                await writeFile(fullPath, uint8Array);
+                markdownPath = `${APP_IMAGE_MARKDOWN_PREFIX}${filename}`;
+                clipboardShelf.toast('Image saved to scratch library');
+            } catch (writeErr) {
+                // Fallback only if storage write fails.
+                console.warn('Virtual image write failed, embedding inline image instead:', writeErr);
+                const blob = new Blob([uint8Array], { type: file.type || 'image/png' });
+                markdownPath = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = () => reject(reader.error || new Error('Failed to read image'));
+                    reader.readAsDataURL(blob);
+                });
+                clipboardShelf.toast('Image embedded in note');
+            }
 
-        view.dispatch(view.state.replaceSelection(`![Image](${relativePath})`));
+            view.dispatch(view.state.replaceSelection(`\n![Image](${markdownPath})\n`));
+            if (viewMode === VIEW_MODES.EDITOR) {
+                setViewMode(VIEW_MODES.SPLIT, { ratio: 25 });
+            }
+            return;
+        }
+
+        try {
+            await mkdir(destinationDir, { recursive: true });
+        } catch (e) {
+        }
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const filename = `image-${timestamp}.${extension}`;
+        const fullPath = `${destinationDir}${navigator.userAgent.includes('Win') ? '\\' : '/'}${filename}`;
+
+        try {
+            await writeFile(fullPath, uint8Array);
+            markdownPath = `assets/${filename}`;
+        } catch (writeErr) {
+            // Fallback when file write fails: still keep image in current note.
+            console.warn('Image file write failed, embedding inline image instead:', writeErr);
+            const blob = new Blob([uint8Array], { type: file.type || 'image/png' });
+            markdownPath = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject(reader.error || new Error('Failed to read image'));
+                reader.readAsDataURL(blob);
+            });
+            clipboardShelf.toast('Image embedded in note');
+        }
+
+        view.dispatch(view.state.replaceSelection(`\n![Image](${markdownPath})\n`));
 
     } catch (err) {
         console.error('Image paste failed:', err);
@@ -1465,7 +1882,30 @@ async function handleImagePaste(view, file) {
     }
 }
 
+window.addEventListener('paste', (event) => {
+    const active = document.activeElement;
+    const isEditorFocused = active && (
+        active.classList?.contains('cm-content') ||
+        !!active.closest?.('.cm-editor')
+    );
+    if (isEditorFocused) return;
+
+    const items = event.clipboardData && event.clipboardData.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+        if (items[i].type.includes('image')) {
+            const file = items[i].getAsFile();
+            if (!file) return;
+            event.preventDefault();
+            handleImagePaste(editor, file);
+            return;
+        }
+    }
+});
+
 window.addEventListener('beforeunload', (event) => {
+    persistTempSession(true);
     if (!hasUnsavedChanges()) return;
     event.preventDefault();
     event.returnValue = '';
@@ -1484,7 +1924,11 @@ window.addEventListener('keydown', (e) => {
         switch (e.key.toLowerCase()) {
             case 'p':
                 e.preventDefault();
-                togglePreview();
+                if (viewMode === VIEW_MODES.SPLIT) {
+                    setViewMode(VIEW_MODES.EDITOR);
+                } else {
+                    setViewMode(VIEW_MODES.SPLIT, { ratio: 25 });
+                }
                 break;
             case 'o':
                 e.preventDefault();
@@ -1499,6 +1943,12 @@ window.addEventListener('keydown', (e) => {
             case 's':
                 e.preventDefault();
                 saveFile();
+                break;
+            case 'w':
+                e.preventDefault();
+                if (currentFilePath && !isScratchpadPath(currentFilePath)) {
+                    closeTab(currentFilePath);
+                }
                 break;
             case 'r':
                 e.preventDefault();
@@ -1526,6 +1976,22 @@ window.addEventListener('keydown', (e) => {
                 if (e.shiftKey) {
                     e.preventDefault();
                     clipboardShelf.focusSearch();
+                }
+                break;
+            case 'g':
+                if (e.shiftKey) {
+                    e.preventDefault();
+                    const sel = editor.state.selection.main;
+                    const selectedText = sel.from === sel.to ? '' : editor.state.doc.sliceString(sel.from, sel.to);
+                    const text = selectedText || editor.state.doc.toString();
+                    if (!text.trim()) {
+                        clipboardShelf.toast('Nothing to save as prompt', 'warn');
+                        break;
+                    }
+                    const title = prompt('Prompt title (optional):') || '';
+                    promptLibrary.addPrompt(text, title).then(() => {
+                        clipboardShelf.toast('Saved to Prompts');
+                    });
                 }
                 break;
         }

@@ -3,6 +3,7 @@ export class StatusBar {
         this.element = null;
         this.tokenEl = null;
         this.cursorEl = null;
+        this.saveTargetEl = null;
     }
 
     init(container, onSidebarToggle, onSearchToggle) {
@@ -45,6 +46,23 @@ export class StatusBar {
 
         this.element.appendChild(leftGroup);
 
+        // Save Target
+        const saveGroup = document.createElement('div');
+        saveGroup.className = 'status-group';
+        const saveItem = document.createElement('div');
+        saveItem.className = 'status-item';
+        const saveLabel = document.createElement('span');
+        saveLabel.className = 'status-label';
+        saveLabel.textContent = 'Save:';
+        const saveValue = document.createElement('span');
+        saveValue.className = 'status-value';
+        saveValue.textContent = 'Scratchpad (auto)';
+        saveItem.appendChild(saveLabel);
+        saveItem.appendChild(saveValue);
+        saveGroup.appendChild(saveItem);
+        this.saveTargetEl = saveValue;
+        this.element.appendChild(saveGroup);
+
         // Right Group (Cursor)
         const rightGroup = document.createElement('div');
         rightGroup.className = 'status-group';
@@ -73,6 +91,16 @@ export class StatusBar {
 
     updateCursor(line, col) {
         if (this.cursorEl) this.cursorEl.textContent = `Ln ${line}, Col ${col}`;
+    }
+
+    updateSaveTarget(text, fullPath = '') {
+        if (!this.saveTargetEl) return;
+        this.saveTargetEl.textContent = text;
+        if (fullPath) {
+            this.saveTargetEl.title = fullPath;
+        } else {
+            this.saveTargetEl.title = text;
+        }
     }
 }
 

@@ -31,6 +31,30 @@ export class ClipboardShelf {
         this.hideSensitive = true;
         this.revealed = new Set();
         this.toastHost = null;
+        this.listeners = new Set();
+    }
+
+    onChange(listener) {
+        this.listeners.add(listener);
+        return () => this.listeners.delete(listener);
+    }
+
+    emitChange() {
+        const snapshot = this.getItems();
+        this.listeners.forEach(listener => {
+            try {
+                listener(snapshot);
+            } catch (err) {
+                console.error('ClipboardShelf listener error:', err);
+            }
+        });
+    }
+
+    getItems() {
+        return [...this.items].sort((a, b) => {
+            if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        });
     }
 
     setSelectionProvider(provider) {
@@ -105,6 +129,7 @@ export class ClipboardShelf {
 
                 await this.purgeExpired('Expired sensitive notes removed');
             }
+            this.emitChange();
         } catch (err) {
             console.error('Failed to load clipboard shelf:', err);
         }
@@ -114,6 +139,7 @@ export class ClipboardShelf {
         try {
             if (!this.path) return;
             await writeTextFile(this.path, JSON.stringify(this.items, null, 2));
+            this.emitChange();
         } catch (err) {
             console.error('Failed to save clipboard shelf:', err);
         }
