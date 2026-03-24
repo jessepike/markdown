@@ -1526,6 +1526,17 @@ body {
   padding: 9px 11px;
   box-sizing: border-box;
   font: inherit;
+  transition: border-color 0.14s, background 0.14s, box-shadow 0.14s;
+}
+
+.surface-search-input:focus,
+.surface-title-input:focus,
+.surface-input:focus,
+.surface-select:focus,
+.surface-textarea:focus {
+  outline: none;
+  border-color: rgba(97, 175, 239, 0.28);
+  box-shadow: 0 0 0 3px rgba(97, 175, 239, 0.08);
 }
 
 .surface-title-input {
@@ -1657,6 +1668,10 @@ body {
   border: 1px solid rgba(255,255,255,0.04);
   border-radius: 11px;
   padding: 11px;
+}
+
+.surface-toggle input[type="checkbox"] {
+  accent-color: #61afef;
 }
 
 .surface-stack {
@@ -1815,6 +1830,7 @@ body {
   line-height: 1;
   cursor: pointer;
   transition: background 0.14s, color 0.14s, border-color 0.14s;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
 }
 
 .workspace-toolbar-btn:hover {
@@ -1856,6 +1872,7 @@ body {
   cursor: pointer;
   transition: background 0.14s, color 0.14s;
   font-size: 12px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
 }
 
 .tab-scroll-btn.hidden {
@@ -1887,6 +1904,7 @@ body {
   border-radius: 11px;
   padding: 8px;
   z-index: 50;
+  box-shadow: 0 16px 30px rgba(0,0,0,0.34);
 }
 
 .tab-overflow-menu.visible {
@@ -1905,6 +1923,12 @@ body {
   justify-content: space-between;
   align-items: center;
   font-size: 12px;
+  transition: background 0.14s, transform 0.14s;
+}
+
+.tab-overflow-item:hover {
+  background: #22262d;
+  transform: translateY(-1px);
 }
 
 .tab-overflow-close {
