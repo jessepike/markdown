@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Agentpad | Main Workspace</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Space+Grotesk:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "tertiary-dim": "#edeaea",
+                        "on-tertiary": "#605f5e",
+                        "outline": "#767575",
+                        "primary-dim": "#92c1ca",
+                        "on-surface": "#e7e5e5",
+                        "secondary-fixed-dim": "#c8d7db",
+                        "secondary-fixed": "#d6e5e9",
+                        "surface-container-high": "#1f2020",
+                        "inverse-surface": "#fcf9f8",
+                        "on-error": "#490106",
+                        "on-tertiary-fixed": "#4a4949",
+                        "inverse-on-surface": "#565555",
+                        "primary-fixed": "#bbebf4",
+                        "surface-tint": "#9fced8",
+                        "on-background": "#e7e5e5",
+                        "on-secondary": "#142225",
+                        "surface-container": "#191a1a",
+                        "on-primary": "#14464f",
+                        "on-primary-fixed": "#12464e",
+                        "surface-container-low": "#131313",
+                        "surface-container-highest": "#252626",
+                        "tertiary-fixed-dim": "#e8e5e4",
+                        "on-tertiary-container": "#575656",
+                        "secondary": "#92a0a4",
+                        "primary-fixed-dim": "#addce6",
+                        "on-tertiary-fixed-variant": "#676666",
+                        "surface": "#0e0e0e",
+                        "on-secondary-container": "#b3c2c5",
+                        "outline-variant": "#484848",
+                        "inverse-primary": "#37666e",
+                        "tertiary": "#fcf9f8",
+                        "tertiary-container": "#edeaea",
+                        "background": "#0e0e0e",
+                        "primary-container": "#1c4d55",
+                        "surface-variant": "#252626",
+                        "error": "#ee7d77",
+                        "secondary-dim": "#92a0a4",
+                        "on-error-container": "#ff9993",
+                        "on-secondary-fixed-variant": "#505e61",
+                        "error-container": "#7f2927",
+                        "primary": "#9fced8",
+                        "on-primary-fixed-variant": "#34626b",
+                        "on-surface-variant": "#acabaa",
+                        "surface-dim": "#0e0e0e",
+                        "on-secondary-fixed": "#344245",
+                        "surface-bright": "#2b2c2c",
+                        "error-dim": "#bb5551",
+                        "tertiary-fixed": "#f6f3f2",
+                        "on-primary-container": "#a9d8e2",
+                        "surface-container-lowest": "#000000",
+                        "secondary-container": "#303e41"
+                    },
+                    fontFamily: {
+                        "headline": ["Space Grotesk"],
+                        "body": ["Inter"],
+                        "label": ["Inter"],
+                        "mono": ["JetBrains Mono"]
+                    },
+                    borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 20;
+            font-size: 20px;
+        }
+        .active-icon { font-variation-settings: 'FILL' 1; }
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #484848; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #767575; }
+    </style>
+</head>
+<body class="bg-surface text-on-surface font-body selection:bg-primary-container selection:text-on-primary-container overflow-hidden">
+<!-- Left Navigation Rail -->
+<nav class="fixed left-0 top-0 h-full flex flex-col items-center py-8 z-40 bg-[#191a1a] w-20">
+<div class="mb-10 opacity-40">
+<span class="material-symbols-outlined text-primary" data-icon="terminal">terminal</span>
+</div>
+<div class="flex flex-col gap-8 flex-1">
+<!-- Workspace: Active -->
+<button class="group relative flex flex-col items-center gap-1 transition-all duration-300 ease-in-out text-[#9fced8] bg-[#1f2020] border-l-2 border-[#9fced8] w-full py-4">
+<span class="material-symbols-outlined active-icon" data-icon="grid_view" style="font-variation-settings: 'FILL' 1;">grid_view</span>
+<span class="font-['Inter'] text-[10px] uppercase tracking-widest font-medium">Workspace</span>
+</button>
+<button class="group flex flex-col items-center gap-1 transition-all duration-300 ease-in-out text-[#92a0a4] opacity-70 hover:opacity-100 hover:bg-[#1f2020] w-full py-2">
+<span class="material-symbols-outlined" data-icon="local_library">local_library</span>
+<span class="font-['Inter'] text-[10px] uppercase tracking-widest">Library</span>
+</button>
+<button class="group flex flex-col items-center gap-1 transition-all duration-300 ease-in-out text-[#92a0a4] opacity-70 hover:opacity-100 hover:bg-[#1f2020] w-full py-2">
+<span class="material-symbols-outlined" data-icon="shelves">shelves</span>
+<span class="font-['Inter'] text-[10px] uppercase tracking-widest">Shelf</span>
+</button>
+<button class="group flex flex-col items-center gap-1 transition-all duration-300 ease-in-out text-[#92a0a4] opacity-70 hover:opacity-100 hover:bg-[#1f2020] w-full py-2">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+<span class="font-['Inter'] text-[10px] uppercase tracking-widest">Sessions</span>
+</button>
+<button class="group flex flex-col items-center gap-1 transition-all duration-300 ease-in-out text-[#92a0a4] opacity-70 hover:opacity-100 hover:bg-[#1f2020] w-full py-2">
+<span class="material-symbols-outlined" data-icon="search">search</span>
+<span class="font-['Inter'] text-[10px] uppercase tracking-widest">Search</span>
+</button>
+</div>
+<button class="group flex flex-col items-center gap-1 transition-all duration-300 ease-in-out text-[#92a0a4] opacity-70 hover:opacity-100 hover:bg-[#1f2020] w-full py-4">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-['Inter'] text-[10px] uppercase tracking-widest">Settings</span>
+</button>
+</nav>
+<!-- Top Application Bar -->
+<header class="fixed top-0 left-20 right-0 h-16 flex justify-between items-center px-6 py-3 z-50 bg-[#0e0e0e]">
+<div class="flex items-center gap-8">
+<h1 class="font-['Space_Grotesk'] text-xl font-bold text-[#9fced8] uppercase tracking-widest">Agentpad</h1>
+<!-- Quick Open Search -->
+<div class="relative group">
+<div class="absolute inset-y-0 left-3 flex items-center pointer-events-none text-outline">
+<span class="material-symbols-outlined text-sm" data-icon="search">search</span>
+</div>
+<input class="bg-surface-container-low border-none rounded-lg pl-10 pr-4 py-1.5 text-sm w-64 focus:ring-1 focus:ring-primary/50 text-on-surface placeholder-outline/50 font-body" placeholder="Quick open..." type="text"/>
+<div class="absolute right-3 inset-y-0 flex items-center pointer-events-none">
+<span class="text-[10px] font-mono text-outline-variant bg-surface-container px-1.5 py-0.5 rounded border border-outline-variant/20">⌘K</span>
+</div>
+</div>
+</div>
+<nav class="flex items-center gap-6 font-['Space_Grotesk'] tracking-tight">
+<button class="text-[#92a0a4] hover:text-[#e7e5e5] transition-colors duration-200 text-sm">Source</button>
+<button class="text-[#9fced8] border-b-2 border-[#9fced8] pb-1 font-bold text-sm">Split</button>
+<button class="text-[#92a0a4] hover:text-[#e7e5e5] transition-colors duration-200 text-sm">Preview</button>
+</nav>
+<div class="flex items-center gap-4">
+<button class="bg-primary-container text-on-primary-container px-4 py-1.5 rounded-lg text-sm font-semibold flex items-center gap-2 hover:bg-primary transition-colors duration-200 active:scale-95">
+<span class="material-symbols-outlined text-sm" data-icon="add">add</span>
+                New Item
+            </button>
+<button class="text-secondary hover:text-on-surface p-2 rounded-lg hover:bg-surface-container transition-all">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</div>
+</header>
+<!-- Main Content Wrapper -->
+<main class="ml-20 mt-16 flex h-[calc(100vh-4rem)] overflow-hidden">
+<!-- Tab Row & Workspace -->
+<div class="flex-1 flex flex-col min-w-0 bg-[#0e0e0e]">
+<!-- Realistic Desktop Tab Row -->
+<div class="h-10 flex items-end px-2 bg-surface-container-low overflow-x-auto border-b border-outline-variant/10">
+<!-- Pinned Tab -->
+<div class="h-8 px-4 flex items-center gap-2 bg-surface-container-high rounded-t-lg text-secondary text-xs border-r border-outline-variant/20 min-w-max cursor-pointer hover:text-on-surface">
+<span class="material-symbols-outlined text-sm text-primary/70" data-icon="push_pin" style="font-variation-settings: 'FILL' 1;">push_pin</span>
+<span>todo.md</span>
+</div>
+<!-- Active Tab -->
+<div class="h-9 px-4 flex items-center gap-3 bg-surface text-on-surface text-xs font-medium rounded-t-lg border-x border-outline-variant/20 min-w-[160px] relative z-10 shadow-[0_-4px_10px_rgba(0,0,0,0.3)]">
+<span class="material-symbols-outlined text-sm text-[#9fced8]" data-icon="description">description</span>
+<span>project_strategy.md</span>
+<button class="ml-auto hover:bg-surface-container-highest rounded-full p-0.5">
+<span class="material-symbols-outlined text-[14px]" data-icon="close">close</span>
+</button>
+</div>
+<!-- Inactive Tab -->
+<div class="h-8 px-4 flex items-center gap-2 text-secondary/60 text-xs min-w-max cursor-pointer hover:bg-surface-container transition-colors rounded-t-lg">
+<span class="material-symbols-outlined text-sm" data-icon="description">description</span>
+<span>api_specs.yaml</span>
+</div>
+</div>
+<!-- Editor Split Mode -->
+<div class="flex flex-1 overflow-hidden">
+<!-- Left: Markdown Source -->
+<div class="w-1/2 overflow-y-auto p-8 font-mono text-sm leading-relaxed border-r border-outline-variant/10 bg-[#0e0e0e]">
+<div class="max-w-2xl mx-auto space-y-4">
+<div class="text-primary-dim opacity-70"># Project Strategy 2024</div>
+<div class="text-secondary">## User Experience</div>
+<div class="text-on-surface/80">
+                            - Design for *operational speed* and **precision**.<br/>
+                            - Maintain a graphite aesthetic with 0px visual noise.<br/>
+                            - Ensure accessibility through tonal contrast.
+                        </div>
+<div class="py-4">
+<div class="bg-surface-container-high p-4 rounded-lg border border-outline-variant/20">
+<div class="text-primary-dim mb-2">```json</div>
+<div class="space-y-1">
+<div class="text-on-surface/60">{</div>
+<div class="pl-4 text-on-surface/90">"<span class="text-primary-dim">endpoint</span>": "<span class="text-secondary-fixed-dim">/v1/workspace/sync</span>",</div>
+<div class="pl-4 text-on-surface/90">"<span class="text-primary-dim">method</span>": "<span class="text-secondary-fixed-dim">POST</span>",</div>
+<div class="pl-4 text-on-surface/90">"<span class="text-primary-dim">payload</span>": { "<span class="text-primary-dim">id</span>": <span class="text-error-dim">102</span> }</div>
+<div class="text-on-surface/60">}</div>
+</div>
+<div class="text-primary-dim mt-2">```</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Right: Rendered Preview -->
+<div class="w-1/2 overflow-y-auto p-12 bg-[#0e0e0e]">
+<article class="max-w-2xl mx-auto prose prose-invert font-body">
+<h1 class="font-headline text-4xl font-bold mb-8 text-on-surface tracking-tight">Project Strategy 2024</h1>
+<h2 class="font-headline text-2xl font-semibold mb-4 text-primary border-b border-outline-variant/20 pb-2">User Experience</h2>
+<ul class="space-y-3 text-on-surface-variant leading-relaxed list-disc pl-5">
+<li>Design for <span class="text-on-surface italic">operational speed</span> and <span class="text-on-surface font-bold">precision</span>.</li>
+<li>Maintain a graphite aesthetic with 0px visual noise.</li>
+<li>Ensure accessibility through tonal contrast.</li>
+</ul>
+<div class="mt-8">
+<h3 class="text-xs uppercase tracking-widest text-outline mb-3 font-semibold">API Implementation</h3>
+<div class="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant/10 shadow-inner">
+<pre class="text-xs font-mono text-secondary-fixed-dim leading-relaxed">{
+  "endpoint": "/v1/workspace/sync",
+  "method": "POST",
+  "payload": {
+    "id": 102,
+    "status": "active"
+  }
+}
+                                </pre>
+</div>
+</div>
+</article>
+</div>
+</div>
+</div>
+<!-- Right Active Shelf -->
+<aside class="w-80 bg-[#1f2020] h-full flex flex-col p-4 space-y-6 z-30 shadow-[-10px_0_30px_rgba(0,0,0,0.3)]">
+<div class="flex items-center justify-between mb-2">
+<div class="flex flex-col">
+<span class="font-['Space_Grotesk'] font-bold text-sm text-[#e7e5e5]">Active Shelf</span>
+<span class="text-[10px] text-secondary/60 uppercase tracking-widest">Utilities</span>
+</div>
+<button class="text-primary hover:bg-primary/10 p-1.5 rounded-lg transition-colors">
+<span class="material-symbols-outlined" data-icon="add_box">add_box</span>
+</button>
+</div>
+<div class="flex flex-col gap-4">
+<!-- Code Snippet Card -->
+<div class="bg-[#252626] p-4 rounded-md group cursor-pointer transition-transform active:scale-95 border border-transparent hover:border-outline-variant/30">
+<div class="flex items-center justify-between mb-3">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-sm text-primary" data-icon="code">code</span>
+<span class="font-mono text-xs text-[#9fced8]">fetch_data.js</span>
+</div>
+<div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-[16px] text-secondary hover:text-on-surface" data-icon="content_copy">content_copy</span>
+<span class="material-symbols-outlined text-[16px] text-secondary hover:text-on-surface" data-icon="push_pin">push_pin</span>
+</div>
+</div>
+<pre class="text-[10px] font-mono text-on-surface-variant leading-tight opacity-80">async function sync() {
+  const res = await fetch(API);
+  return res.json();
+}</pre>
+</div>
+<!-- Image Card -->
+<div class="bg-[#252626] rounded-md group overflow-hidden cursor-pointer transition-transform active:scale-95 border border-transparent hover:border-outline-variant/30">
+<div class="h-32 w-full relative">
+<img alt="Architecture Diagram" class="w-full h-full object-cover opacity-50 grayscale hover:grayscale-0 transition-all duration-500" data-alt="Blueprint of a technical software architecture diagram" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBs0hBjb4dU79nOWJLy1Xcb6ZQxJeXW0n0H3UoWFwny-X-cv1MfEMSBCAgckhv19qc-0rhDDabG0jUss0iGlpV9S_veqArDN9m89_oHYVIzzNtjVNqPSDjXLMS67K5KvF0VYQ5uQQP-YCnid0U0ZAPK1yqmZv7BlXoJ6yFd3p1KSQwumu9sLRhv57utJ-pSedv9SwwmrxFMQxvTDPext8bN47M5USfSF9CN3pv-Qhx6rYHHWpH74KcmxrpjrDTmMKq3X5zrUtwq"/>
+<div class="absolute top-2 left-2 bg-surface/80 backdrop-blur-sm px-2 py-1 rounded text-[10px] flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px] text-primary" data-icon="image">image</span>
+<span class="text-[#e7e5e5] font-medium">architecture_v2.png</span>
+</div>
+<div class="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+<div class="bg-surface/80 p-1 rounded-md"><span class="material-symbols-outlined text-[14px]" data-icon="fullscreen">fullscreen</span></div>
+</div>
+</div>
+</div>
+<!-- Note Card -->
+<div class="bg-[#252626] p-4 rounded-md group cursor-pointer transition-transform active:scale-95 border border-transparent hover:border-outline-variant/30">
+<div class="flex items-center gap-2 mb-2">
+<span class="material-symbols-outlined text-sm text-primary" data-icon="sticky_note_2">sticky_note_2</span>
+<span class="font-medium text-xs text-[#e7e5e5]">Meeting Notes: Core Pillars</span>
+</div>
+<p class="text-[11px] text-[#92a0a4] line-clamp-2 leading-relaxed">Discussed the importance of atomic deployments and the new markdown parser implementation...</p>
+</div>
+<!-- Prompt Card -->
+<div class="bg-[#252626] p-4 rounded-md group cursor-pointer transition-transform active:scale-95 border border-transparent hover:border-outline-variant/30">
+<div class="flex items-center justify-between mb-2">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-sm text-primary" data-icon="terminal">terminal</span>
+<span class="font-medium text-xs text-[#e7e5e5]">Refactor Codebase</span>
+</div>
+<span class="text-[9px] text-outline px-1.5 py-0.5 border border-outline/20 rounded">GPT-4</span>
+</div>
+<div class="bg-surface-container-low p-2 rounded text-[10px] text-on-surface-variant font-mono border-l-2 border-primary">
+                        "Analyze current module structure and suggest improvements for tree-shaking..."
+                    </div>
+</div>
+</div>
+<div class="mt-auto">
+<button class="w-full py-2.5 bg-surface-container rounded-md text-[11px] font-bold text-primary uppercase tracking-widest hover:bg-surface-container-highest transition-colors flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[16px]" data-icon="add">add</span>
+                    Add Quick Note
+                </button>
+</div>
+</aside>
+</main>
+<!-- Bottom Status Info (Floating Detail) -->
+<footer class="fixed bottom-4 left-24 flex items-center gap-4 text-[10px] font-mono text-outline uppercase tracking-tighter pointer-events-none">
+<div class="flex items-center gap-1.5 bg-surface-container/60 px-3 py-1 rounded-full backdrop-blur-sm">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+            CONNECTED: LOCAL_HOST_8080
+        </div>
+<div class="bg-surface-container/60 px-3 py-1 rounded-full backdrop-blur-sm">
+            UTF-8 · MARKDOWN · 424 WORDS
+        </div>
+</footer>
+</body></html>

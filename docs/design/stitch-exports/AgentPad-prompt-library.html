@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Scratchpad - Prompt Library</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-surface": "#e7e5e5",
+              "secondary-fixed-dim": "#c8d7db",
+              "background": "#0e0e0e",
+              "on-secondary-fixed": "#344245",
+              "error-container": "#7f2927",
+              "primary-fixed": "#bbebf4",
+              "surface-bright": "#2b2c2c",
+              "primary-container": "#1c4d55",
+              "surface-container": "#191a1a",
+              "outline": "#767575",
+              "primary": "#9fced8",
+              "inverse-surface": "#fcf9f8",
+              "secondary-fixed": "#d6e5e9",
+              "on-tertiary-fixed": "#4a4949",
+              "on-primary": "#14464f",
+              "surface-container-lowest": "#000000",
+              "on-primary-fixed": "#12464e",
+              "secondary-container": "#303e41",
+              "on-secondary": "#142225",
+              "on-primary-container": "#a9d8e2",
+              "surface-variant": "#252626",
+              "outline-variant": "#484848",
+              "on-error": "#490106",
+              "primary-dim": "#92c1ca",
+              "on-surface-variant": "#acabaa",
+              "secondary-dim": "#92a0a4",
+              "on-error-container": "#ff9993",
+              "surface-container-low": "#131313",
+              "tertiary-dim": "#edeaea",
+              "on-tertiary-container": "#575656",
+              "surface-dim": "#0e0e0e",
+              "primary-fixed-dim": "#addce6",
+              "on-tertiary-fixed-variant": "#676666",
+              "tertiary-container": "#edeaea",
+              "tertiary": "#fcf9f8",
+              "surface-container-high": "#1f2020",
+              "tertiary-fixed-dim": "#e8e5e4",
+              "inverse-on-surface": "#565555",
+              "inverse-primary": "#37666e",
+              "surface-tint": "#9fced8",
+              "on-background": "#e7e5e5",
+              "on-primary-fixed-variant": "#34626b",
+              "surface": "#0e0e0e",
+              "on-secondary-fixed-variant": "#505e61",
+              "error": "#ee7d77",
+              "error-dim": "#bb5551",
+              "tertiary-fixed": "#f6f3f2",
+              "on-secondary-container": "#b3c2c5",
+              "on-tertiary": "#605f5e",
+              "secondary": "#92a0a4",
+              "surface-container-highest": "#252626"
+            },
+            fontFamily: {
+              "headline": ["Space Grotesk"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+            font-size: 20px;
+        }
+        body { font-family: 'Inter', sans-serif; background-color: #0e0e0e; color: #e7e5e5; }
+        .thin-scrollbar::-webkit-scrollbar { width: 4px; }
+        .thin-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .thin-scrollbar::-webkit-scrollbar-thumb { background: #484848; border-radius: 2px; }
+    </style>
+</head>
+<body class="flex h-screen overflow-hidden">
+<!-- SIDE NAV RAIL (from JSON) -->
+<nav class="fixed left-0 top-14 h-[calc(100dvh-3.5rem)] w-20 bg-neutral-900 dark:bg-[#191a1a] flex flex-col items-center py-4 space-y-2 z-40">
+<div class="flex flex-col items-center justify-center w-full py-4 text-[#92a0a4] hover:bg-[#1f2020] hover:text-[#e7e5e5] transition-all duration-200 ease-in-out cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined mb-1">grid_view</span>
+<span class="font-['Inter'] text-[11px] uppercase tracking-[0.05em]">Workspace</span>
+</div>
+<!-- ACTIVE TAB: Library -->
+<div class="flex flex-col items-center justify-center w-full py-4 text-[#9fced8] border-l-2 border-[#9fced8] bg-[#252626] transition-all duration-200 ease-in-out cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined mb-1">book_5</span>
+<span class="font-['Inter'] text-[11px] uppercase tracking-[0.05em]">Library</span>
+</div>
+<div class="flex flex-col items-center justify-center w-full py-4 text-[#92a0a4] hover:bg-[#1f2020] hover:text-[#e7e5e5] transition-all duration-200 ease-in-out cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined mb-1">inventory_2</span>
+<span class="font-['Inter'] text-[11px] uppercase tracking-[0.05em]">Shelf</span>
+</div>
+<div class="flex flex-col items-center justify-center w-full py-4 text-[#92a0a4] hover:bg-[#1f2020] hover:text-[#e7e5e5] transition-all duration-200 ease-in-out cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined mb-1">history</span>
+<span class="font-['Inter'] text-[11px] uppercase tracking-[0.05em]">Sessions</span>
+</div>
+<div class="flex flex-col items-center justify-center w-full py-4 text-[#92a0a4] hover:bg-[#1f2020] hover:text-[#e7e5e5] transition-all duration-200 ease-in-out cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined mb-1">search</span>
+<span class="font-['Inter'] text-[11px] uppercase tracking-[0.05em]">Search</span>
+</div>
+<div class="flex flex-col items-center justify-center w-full py-4 text-[#92a0a4] hover:bg-[#1f2020] hover:text-[#e7e5e5] transition-all duration-200 ease-in-out cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined mb-1">settings</span>
+<span class="font-['Inter'] text-[11px] uppercase tracking-[0.05em]">Settings</span>
+</div>
+</nav>
+<!-- TOP BAR (from JSON) -->
+<header class="fixed top-0 w-full z-50 bg-neutral-900 dark:bg-[#0e0e0e] flex items-center justify-between px-6 h-14 w-full">
+<div class="flex items-center gap-4">
+<span class="text-xl font-bold text-[#e7e5e5] tracking-tighter font-['Space_Grotesk']">Scratchpad</span>
+<div class="h-6 w-[1px] bg-outline-variant opacity-30"></div>
+<span class="text-[#92a0a4] font-['Space_Grotesk'] text-sm tracking-tight">Prompt Library</span>
+</div>
+<div class="flex items-center gap-6">
+<div class="hidden md:flex items-center bg-surface-container-low border border-outline-variant/20 rounded-lg px-3 py-1.5 w-80 group focus-within:border-primary/50 transition-colors">
+<span class="material-symbols-outlined text-on-surface-variant mr-2">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-xs w-full placeholder:text-on-tertiary-fixed-variant" placeholder="Quick open prompts..." type="text"/>
+<span class="text-[10px] text-on-tertiary-fixed-variant border border-outline-variant px-1 rounded">⌘K</span>
+</div>
+<button class="bg-primary-container text-on-primary-container px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 hover:bg-primary-container/80 transition-colors active:opacity-80">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                New Item
+            </button>
+<div class="flex items-center gap-4 text-[#92a0a4]">
+<span class="material-symbols-outlined hover:text-[#e7e5e5] cursor-pointer transition-colors">help_outline</span>
+<span class="material-symbols-outlined hover:text-[#e7e5e5] cursor-pointer transition-colors">account_circle</span>
+</div>
+</div>
+</header>
+<!-- MAIN APP CANVAS -->
+<main class="flex-1 ml-20 mt-14 flex overflow-hidden">
+<!-- COLUMN 1: Categories -->
+<aside class="w-48 bg-surface-container-low flex flex-col pt-6 overflow-y-auto thin-scrollbar">
+<h3 class="px-6 text-[10px] font-bold text-on-tertiary-fixed-variant uppercase tracking-[0.1em] mb-4">Domains</h3>
+<div class="space-y-1">
+<button class="w-full text-left px-6 py-2 text-xs font-medium text-on-surface hover:bg-surface-container transition-colors flex items-center justify-between group">
+<span>Design</span>
+<span class="text-[10px] text-on-tertiary-fixed-variant group-hover:text-primary transition-colors">12</span>
+</button>
+<button class="w-full text-left px-6 py-2 text-xs font-medium text-on-surface hover:bg-surface-container transition-colors flex items-center justify-between group">
+<span>CI/CD</span>
+<span class="text-[10px] text-on-tertiary-fixed-variant group-hover:text-primary transition-colors">4</span>
+</button>
+<button class="w-full text-left px-6 py-2 text-xs font-medium text-on-surface hover:bg-surface-container transition-colors flex items-center justify-between group">
+<span>Architecture</span>
+<span class="text-[10px] text-on-tertiary-fixed-variant group-hover:text-primary transition-colors">8</span>
+</button>
+<button class="w-full text-left px-6 py-2 text-xs font-bold text-primary bg-surface-container transition-colors flex items-center justify-between group">
+<span>Coding</span>
+<span class="text-[10px] text-primary transition-colors">24</span>
+</button>
+<button class="w-full text-left px-6 py-2 text-xs font-medium text-on-surface hover:bg-surface-container transition-colors flex items-center justify-between group">
+<span>Research</span>
+<span class="text-[10px] text-on-tertiary-fixed-variant group-hover:text-primary transition-colors">15</span>
+</button>
+<button class="w-full text-left px-6 py-2 text-xs font-medium text-on-surface hover:bg-surface-container transition-colors flex items-center justify-between group">
+<span>Writing</span>
+<span class="text-[10px] text-on-tertiary-fixed-variant group-hover:text-primary transition-colors">31</span>
+</button>
+<button class="w-full text-left px-6 py-2 text-xs font-medium text-on-surface hover:bg-surface-container transition-colors flex items-center justify-between group">
+<span>Red Team</span>
+<span class="text-[10px] text-on-tertiary-fixed-variant group-hover:text-primary transition-colors">6</span>
+</button>
+<button class="w-full text-left px-6 py-2 text-xs font-medium text-on-surface hover:bg-surface-container transition-colors flex items-center justify-between group">
+<span>Agent Instructions</span>
+<span class="text-[10px] text-on-tertiary-fixed-variant group-hover:text-primary transition-colors">19</span>
+</button>
+</div>
+</aside>
+<!-- COLUMN 2: Prompt List -->
+<section class="w-80 bg-surface-container flex flex-col overflow-hidden">
+<div class="p-4 bg-surface-container-high/50 border-b border-outline-variant/10">
+<div class="flex items-center bg-surface-container-lowest border border-outline-variant/15 rounded px-2 py-1.5">
+<span class="material-symbols-outlined text-[16px] text-on-tertiary-fixed-variant mr-2">filter_list</span>
+<input class="bg-transparent border-none focus:ring-0 text-[11px] w-full placeholder:text-on-tertiary-fixed-variant" placeholder="Search prompts..." type="text"/>
+</div>
+</div>
+<div class="flex-1 overflow-y-auto thin-scrollbar">
+<!-- Selected Item -->
+<div class="p-4 bg-surface-container-highest border-l-2 border-primary cursor-pointer">
+<div class="flex justify-between items-start mb-1">
+<span class="text-xs font-bold text-primary">Module Refactor &amp; Type Safety</span>
+<span class="text-[9px] text-on-tertiary-fixed-variant">2h ago</span>
+</div>
+<div class="flex items-center gap-2 mb-2">
+<span class="text-[9px] px-1.5 py-0.5 rounded bg-primary-container/20 text-primary-dim uppercase tracking-wider font-bold">Coding</span>
+</div>
+<p class="text-[10px] text-secondary-dim line-clamp-2 leading-relaxed">Systematic approach to refactoring legacy JS modules to TypeScript with strict type-safety rules...</p>
+</div>
+<!-- Other Items -->
+<div class="p-4 hover:bg-surface-container-high transition-colors cursor-pointer border-b border-outline-variant/5">
+<div class="flex justify-between items-start mb-1">
+<span class="text-xs font-medium text-on-surface">Unit Test Generator</span>
+<span class="text-[9px] text-on-tertiary-fixed-variant">5h ago</span>
+</div>
+<div class="flex items-center gap-2 mb-2">
+<span class="text-[9px] px-1.5 py-0.5 rounded bg-outline-variant/20 text-on-surface-variant uppercase tracking-wider font-bold">Coding</span>
+</div>
+<p class="text-[10px] text-on-tertiary-fixed-variant line-clamp-2 leading-relaxed">Generates Vitest compatible tests based on the provided exported function signatures...</p>
+</div>
+<div class="p-4 hover:bg-surface-container-high transition-colors cursor-pointer border-b border-outline-variant/5">
+<div class="flex justify-between items-start mb-1">
+<span class="text-xs font-medium text-on-surface">Regex Explainer</span>
+<span class="text-[9px] text-on-tertiary-fixed-variant">1d ago</span>
+</div>
+<div class="flex items-center gap-2 mb-2">
+<span class="text-[9px] px-1.5 py-0.5 rounded bg-outline-variant/20 text-on-surface-variant uppercase tracking-wider font-bold">Coding</span>
+</div>
+<p class="text-[10px] text-on-tertiary-fixed-variant line-clamp-2 leading-relaxed">Parses complex regular expressions and provides a step-by-step breakdown of matches...</p>
+</div>
+<div class="p-4 hover:bg-surface-container-high transition-colors cursor-pointer border-b border-outline-variant/5">
+<div class="flex justify-between items-start mb-1">
+<span class="text-xs font-medium text-on-surface">Git Commit Stylist</span>
+<span class="text-[9px] text-on-tertiary-fixed-variant">2d ago</span>
+</div>
+<div class="flex items-center gap-2 mb-2">
+<span class="text-[9px] px-1.5 py-0.5 rounded bg-outline-variant/20 text-on-surface-variant uppercase tracking-wider font-bold">Coding</span>
+</div>
+<p class="text-[10px] text-on-tertiary-fixed-variant line-clamp-2 leading-relaxed">Formats staging area changes into Conventional Commits spec with detailed scope...</p>
+</div>
+</div>
+</section>
+<!-- COLUMN 3: Editor Pane -->
+<section class="flex-1 bg-surface flex flex-col overflow-hidden relative shadow-2xl">
+<div class="h-14 border-b border-outline-variant/10 flex items-center justify-between px-8 bg-surface-dim">
+<div class="flex items-center gap-4">
+<h1 class="font-headline font-bold text-lg text-on-surface tracking-tight">Module Refactor &amp; Type Safety</h1>
+<span class="material-symbols-outlined text-secondary-dim text-sm cursor-pointer hover:text-primary">star</span>
+</div>
+<div class="flex bg-surface-container-high rounded p-0.5">
+<button class="px-3 py-1 text-[10px] font-bold bg-surface-container-highest text-primary-dim rounded shadow-sm">Edit</button>
+<button class="px-3 py-1 text-[10px] font-medium text-on-tertiary-fixed-variant hover:text-on-surface transition-colors">Preview</button>
+<button class="px-3 py-1 text-[10px] font-medium text-on-tertiary-fixed-variant hover:text-on-surface transition-colors">Split</button>
+</div>
+</div>
+<div class="flex-1 p-10 overflow-y-auto thin-scrollbar font-body">
+<div class="max-w-3xl mx-auto space-y-6">
+<div class="space-y-2">
+<span class="text-[10px] font-mono text-primary/60 uppercase tracking-widest font-bold"># Role Definition</span>
+<p class="text-on-surface leading-relaxed text-sm">You are an expert <span class="text-primary font-medium">Full-stack Engineer</span> specializing in TypeScript and architecture migration patterns.</p>
+</div>
+<div class="space-y-2">
+<span class="text-[10px] font-mono text-primary/60 uppercase tracking-widest font-bold"># Goal</span>
+<div class="p-4 bg-surface-container-low border-l-2 border-outline-variant rounded-r-lg">
+<p class="text-on-surface-variant text-sm italic">"{{goal}}"</p>
+</div>
+</div>
+<div class="space-y-4">
+<span class="text-[10px] font-mono text-primary/60 uppercase tracking-widest font-bold"># Core Instructions</span>
+<div class="space-y-3">
+<p class="text-on-surface text-sm">1. Scan the provided source code for implicit `any` types and lack of interface definitions.</p>
+<p class="text-on-surface text-sm">2. Propose a new <span class="bg-surface-container-highest px-1 rounded">types.ts</span> file that encapsulates all business domain models.</p>
+<p class="text-on-surface text-sm">3. Refactor the logic using modern ESNext features while ensuring strict null checks.</p>
+</div>
+</div>
+<div class="space-y-2">
+<span class="text-[10px] font-mono text-primary/60 uppercase tracking-widest font-bold"># Constraints</span>
+<ul class="list-disc list-inside text-sm text-on-surface-variant space-y-1 pl-2">
+<li>{{constraints}}</li>
+<li>Do not use external libraries unless specified.</li>
+<li>Maintain 100% test coverage compatibility.</li>
+</ul>
+</div>
+<div class="pt-8 border-t border-outline-variant/10">
+<div class="bg-surface-container-low rounded-lg p-6 border border-outline-variant/5">
+<p class="text-xs text-on-tertiary-fixed-variant font-mono leading-relaxed">
+                                [Source Context]<br/>
+                                PATH: src/lib/auth/engine.js<br/>
+                                SIZE: 4.2kb<br/>
+                                DEPS: none
+                            </p>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- COLUMN 4: Metadata Panel -->
+<aside class="w-64 bg-surface-container-low border-l border-outline-variant/10 flex flex-col p-6 overflow-y-auto thin-scrollbar">
+<div class="mb-8">
+<h3 class="text-[10px] font-bold text-on-tertiary-fixed-variant uppercase tracking-[0.1em] mb-4">Properties</h3>
+<div class="space-y-4">
+<div>
+<label class="text-[10px] text-on-tertiary-fixed-variant block mb-1">Version</label>
+<p class="text-xs text-on-surface font-medium">v2.1</p>
+</div>
+<div>
+<label class="text-[10px] text-on-tertiary-fixed-variant block mb-1">Last Used</label>
+<p class="text-xs text-on-surface font-medium">Oct 14, 2024</p>
+</div>
+<div>
+<label class="text-[10px] text-on-tertiary-fixed-variant block mb-1">Target Tools</label>
+<div class="flex flex-wrap gap-2 mt-2">
+<span class="text-[9px] bg-surface-container-high px-2 py-1 rounded border border-outline-variant/10 text-on-surface-variant">GPT-4</span>
+<span class="text-[9px] bg-surface-container-high px-2 py-1 rounded border border-outline-variant/10 text-on-surface-variant">Claude 3.5</span>
+</div>
+</div>
+<div>
+<label class="text-[10px] text-on-tertiary-fixed-variant block mb-1">Tags</label>
+<div class="flex flex-wrap gap-1.5 mt-2">
+<span class="text-[9px] bg-secondary-container/30 text-secondary-dim px-1.5 py-0.5 rounded">#coding</span>
+<span class="text-[9px] bg-secondary-container/30 text-secondary-dim px-1.5 py-0.5 rounded">#refactor</span>
+<span class="text-[9px] bg-secondary-container/30 text-secondary-dim px-1.5 py-0.5 rounded">#typescript</span>
+</div>
+</div>
+</div>
+</div>
+<div class="mt-auto space-y-2">
+<button class="w-full bg-primary text-on-primary py-2.5 rounded text-xs font-bold flex items-center justify-center gap-2 hover:bg-primary-dim transition-colors active:opacity-90">
+<span class="material-symbols-outlined text-[18px]">content_copy</span>
+                    Copy Prompt
+                </button>
+<button class="w-full bg-surface-container-high border border-outline-variant/20 text-on-surface py-2.5 rounded text-xs font-medium flex items-center justify-center gap-2 hover:bg-surface-container-highest transition-colors">
+<span class="material-symbols-outlined text-[18px]">save</span>
+                    Save Changes
+                </button>
+<div class="grid grid-cols-2 gap-2">
+<button class="bg-surface-container-low border border-outline-variant/10 text-on-surface-variant py-2 rounded text-[10px] font-medium flex flex-col items-center justify-center gap-1 hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-[16px]">content_copy</span>
+                        Duplicate
+                    </button>
+<button class="bg-surface-container-low border border-outline-variant/10 text-on-surface-variant py-2 rounded text-[10px] font-medium flex flex-col items-center justify-center gap-1 hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-[16px]">inventory_2</span>
+                        To Shelf
+                    </button>
+</div>
+</div>
+</aside>
+</main>
+</body></html>

@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Agentpad | Shelf View</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "tertiary-dim": "#bdd8eb",
+                        "surface-container-lowest": "#000000",
+                        "secondary-fixed-dim": "#d2d5d5",
+                        "on-surface": "#e7e5e4",
+                        "inverse-on-surface": "#565555",
+                        "secondary-container": "#393c3d",
+                        "on-error": "#490106",
+                        "on-primary-fixed": "#13464e",
+                        "surface-container-highest": "#252626",
+                        "inverse-surface": "#fcf9f8",
+                        "surface-container-high": "#1f2020",
+                        "on-error-container": "#ff9993",
+                        "on-background": "#e7e5e4",
+                        "secondary": "#9b9e9f",
+                        "outline-variant": "#484848",
+                        "surface-dim": "#0e0e0e",
+                        "on-secondary-container": "#bdc0c0",
+                        "on-primary-fixed-variant": "#34626b",
+                        "surface-tint": "#9fced8",
+                        "primary-container": "#1c4d56",
+                        "on-tertiary-container": "#3c5565",
+                        "error-dim": "#bb5551",
+                        "inverse-primary": "#38666f",
+                        "error": "#ee7d77",
+                        "on-secondary-fixed-variant": "#595c5d",
+                        "tertiary-fixed-dim": "#bdd8eb",
+                        "secondary-dim": "#9b9e9f",
+                        "tertiary-container": "#cbe6fa",
+                        "error-container": "#7f2927",
+                        "surface": "#0e0e0e",
+                        "on-tertiary": "#445d6d",
+                        "on-primary-container": "#a9d8e2",
+                        "tertiary": "#e4f3ff",
+                        "primary-fixed-dim": "#addce6",
+                        "outline": "#767575",
+                        "surface-container": "#191a1a",
+                        "on-secondary-fixed": "#3d4041",
+                        "primary": "#9fced8",
+                        "on-tertiary-fixed": "#294252",
+                        "on-secondary": "#1d2121",
+                        "on-primary": "#14464f",
+                        "on-tertiary-fixed-variant": "#455f6f",
+                        "background": "#0e0e0e",
+                        "tertiary-fixed": "#cbe6fa",
+                        "surface-container-low": "#131313",
+                        "on-surface-variant": "#acabaa",
+                        "primary-dim": "#92c0ca",
+                        "primary-fixed": "#bbebf5",
+                        "surface-variant": "#252626",
+                        "surface-bright": "#2c2c2c",
+                        "secondary-fixed": "#e1e3e3"
+                    },
+                    fontFamily: {
+                        "headline": ["Space Grotesk"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    },
+                    borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            background-color: #0e0e0e;
+            color: #e7e5e4;
+            font-family: 'Inter', sans-serif;
+        }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="flex overflow-hidden">
+<!-- SideNavBar (Shared Component) -->
+<aside class="fixed left-0 top-0 h-full flex flex-col py-8 z-40 bg-[#141414] dark:bg-[#141414] w-24 border-r border-transparent tonal-shift transition-all duration-200 ease-in-out">
+<div class="flex-1 flex flex-col items-center space-y-8">
+<!-- Nav Item: Workspace -->
+<button class="w-full flex flex-col items-center justify-center text-gray-600 hover:text-gray-300 hover:bg-[#1f2020] py-4 transition-all duration-200">
+<span class="material-symbols-outlined mb-1" data-icon="grid_view">grid_view</span>
+<span class="font-['Inter'] text-[11px] font-medium uppercase tracking-widest">Workspace</span>
+</button>
+<!-- Nav Item: Library -->
+<button class="w-full flex flex-col items-center justify-center text-gray-600 hover:text-gray-300 hover:bg-[#1f2020] py-4 transition-all duration-200">
+<span class="material-symbols-outlined mb-1" data-icon="database">database</span>
+<span class="font-['Inter'] text-[11px] font-medium uppercase tracking-widest">Library</span>
+</button>
+<!-- Nav Item: Shelf (ACTIVE) -->
+<button class="w-full flex flex-col items-center justify-center text-[#9fced8] border-l-2 border-[#9fced8] bg-transparent py-4 transition-all duration-200">
+<span class="material-symbols-outlined mb-1" data-icon="Shelves">shelves</span>
+<span class="font-['Inter'] text-[11px] font-medium uppercase tracking-widest">Shelf</span>
+</button>
+<!-- Nav Item: Sessions -->
+<button class="w-full flex flex-col items-center justify-center text-gray-600 hover:text-gray-300 hover:bg-[#1f2020] py-4 transition-all duration-200">
+<span class="material-symbols-outlined mb-1" data-icon="history">history</span>
+<span class="font-['Inter'] text-[11px] font-medium uppercase tracking-widest">Sessions</span>
+</button>
+<!-- Nav Item: Search -->
+<button class="w-full flex flex-col items-center justify-center text-gray-600 hover:text-gray-300 hover:bg-[#1f2020] py-4 transition-all duration-200">
+<span class="material-symbols-outlined mb-1" data-icon="search">search</span>
+<span class="font-['Inter'] text-[11px] font-medium uppercase tracking-widest">Search</span>
+</button>
+</div>
+<div class="mt-auto">
+<button class="w-full flex flex-col items-center justify-center text-gray-600 hover:text-gray-300 hover:bg-[#1f2020] py-4 transition-all duration-200">
+<span class="material-symbols-outlined mb-1" data-icon="settings">settings</span>
+<span class="font-['Inter'] text-[11px] font-medium uppercase tracking-widest">Settings</span>
+</button>
+</div>
+</aside>
+<div class="flex-1 ml-24 flex flex-col h-screen overflow-hidden">
+<!-- TopNavBar (Shared Component) -->
+<header class="flex justify-between items-center w-full px-6 h-11 max-w-full bg-[#191a1a] dark:bg-[#191a1a] border-none docked full-width top-0 z-30">
+<div class="flex items-center space-x-8">
+<div class="text-xl font-bold text-[#9fced8] tracking-tighter font-headline">Agentpad</div>
+<nav class="flex space-x-6">
+<button class="text-gray-500 hover:text-gray-300 transition-colors font-['Space_Grotesk'] font-bold text-sm tracking-tight Headlines: Space Grotesk. Labels: Inter.">Source</button>
+<button class="text-gray-500 hover:text-gray-300 transition-colors font-['Space_Grotesk'] font-bold text-sm tracking-tight Headlines: Space Grotesk. Labels: Inter.">Split</button>
+<button class="text-white border-b-2 border-[#9fced8] pb-2 font-['Space_Grotesk'] font-bold text-sm tracking-tight Headlines: Space Grotesk. Labels: Inter.">Preview</button>
+</nav>
+</div>
+<div class="flex items-center space-x-4">
+<div class="relative flex items-center">
+<input class="bg-surface-dim text-xs py-1.5 px-3 w-48 border-none focus:ring-1 focus:ring-primary rounded-sm font-label uppercase tracking-wider" placeholder="Search shelf..." type="text"/>
+</div>
+<button class="bg-primary text-on-primary px-3 py-1.5 rounded-sm font-headline font-bold text-xs uppercase tracking-widest hover:brightness-110 active:scale-95 duration-75 transition-all">New Item</button>
+</div>
+</header>
+<!-- Main Layout: Content Area -->
+<main class="flex-1 flex overflow-hidden">
+<!-- Center Content: Preview Area -->
+<section class="flex-[3] bg-surface overflow-y-auto p-12 hide-scrollbar relative">
+<div class="max-w-3xl mx-auto pt-16">
+<div class="mb-4 flex items-center gap-2">
+<span class="text-[10px] uppercase tracking-[0.2em] text-primary font-bold">Draft Asset</span>
+<div class="h-[1px] flex-1 bg-outline-variant opacity-20"></div>
+</div>
+<h1 class="font-headline text-4xl font-bold text-on-surface mb-8 tracking-tight">Technical Architecture: Multi-Agent Synthesis Framework</h1>
+<div class="space-y-6 text-on-surface-variant font-body leading-relaxed text-lg">
+<p>The core proposition of the Agentpad shelf is the ability to stage disparate data fragments—ranging from raw LLM outputs to vector-search snippets—into a cohesive editorial structure.</p>
+<div class="bg-surface-container p-6 border-l-2 border-primary my-8">
+<p class="font-mono text-sm text-primary mb-2">// Proposed Logic Layer</p>
+<code class="text-sm">const shelfSync = (assetId) =&gt; { return repository.stage(assetId).then(ui =&gt; ui.refresh()) };</code>
+</div>
+<p>In this view, the user is not just viewing a file; they are curating a workflow. The transition from 'captured' to 'library' represents the maturation of a data point from a temporary insight into a permanent knowledge asset.</p>
+<p>The "Monolithic Workbench" approach ensures that even with high information density, the user's primary focus remains on the content itself, with secondary interactions relegated to the right-hand shelf rail.</p>
+</div>
+</div>
+<!-- Preview Actions Bar -->
+<div class="sticky bottom-8 left-0 w-full flex justify-center">
+<div class="bg-surface-container-highest px-4 py-2 flex items-center space-x-4 shadow-2xl rounded-sm border border-outline-variant/10">
+<button class="flex items-center space-x-2 text-on-surface-variant hover:text-primary transition-colors py-1 px-2">
+<span class="material-symbols-outlined text-[20px]" data-icon="edit">edit</span>
+<span class="text-[10px] font-bold uppercase tracking-widest">Edit</span>
+</button>
+<div class="w-[1px] h-4 bg-outline-variant opacity-30"></div>
+<button class="flex items-center space-x-2 text-on-surface-variant hover:text-primary transition-colors py-1 px-2">
+<span class="material-symbols-outlined text-[20px]" data-icon="share">share</span>
+<span class="text-[10px] font-bold uppercase tracking-widest">Export</span>
+</button>
+<div class="w-[1px] h-4 bg-outline-variant opacity-30"></div>
+<button class="flex items-center space-x-2 text-primary transition-colors py-1 px-2">
+<span class="material-symbols-outlined text-[20px]" data-icon="move_to_inbox">move_to_inbox</span>
+<span class="text-[10px] font-bold uppercase tracking-widest">Store</span>
+</button>
+</div>
+</div>
+</section>
+<!-- Right Content: Active Shelf Area -->
+<section class="flex-[1.8] bg-surface-container border-l border-transparent flex flex-col">
+<!-- Shelf Filter Bar -->
+<div class="h-12 px-4 flex items-center justify-between bg-surface-container-high">
+<span class="text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface">Active Shelf</span>
+<div class="flex items-center space-x-2">
+<span class="material-symbols-outlined text-[18px] text-outline cursor-pointer hover:text-primary transition-colors" data-icon="filter_list">filter_list</span>
+<span class="material-symbols-outlined text-[18px] text-outline cursor-pointer hover:text-primary transition-colors" data-icon="sort">sort</span>
+</div>
+</div>
+<!-- Category Tabs -->
+<div class="flex border-b border-outline-variant/10">
+<button class="flex-1 py-3 text-[9px] font-bold uppercase tracking-widest text-primary border-b border-primary">All</button>
+<button class="flex-1 py-3 text-[9px] font-bold uppercase tracking-widest text-secondary hover:text-on-surface transition-colors">Text</button>
+<button class="flex-1 py-3 text-[9px] font-bold uppercase tracking-widest text-secondary hover:text-on-surface transition-colors">Code</button>
+<button class="flex-1 py-3 text-[9px] font-bold uppercase tracking-widest text-secondary hover:text-on-surface transition-colors">Images</button>
+<button class="flex-1 py-3 text-[9px] font-bold uppercase tracking-widest text-secondary hover:text-on-surface transition-colors">Drafts</button>
+</div>
+<!-- Shelf Content -->
+<div class="flex-1 overflow-y-auto p-3 space-y-3 hide-scrollbar">
+<!-- Compact Card: Snippet -->
+<div class="bg-surface-container-high p-4 border-l-2 border-primary group hover:bg-surface-bright transition-colors cursor-pointer">
+<div class="flex justify-between items-start mb-2">
+<span class="text-[9px] font-bold uppercase tracking-widest text-primary">Snippet</span>
+<div class="flex opacity-0 group-hover:opacity-100 transition-opacity space-x-2">
+<span class="material-symbols-outlined text-[14px] text-secondary hover:text-on-surface" data-icon="content_copy">content_copy</span>
+<span class="material-symbols-outlined text-[14px] text-secondary hover:text-on-surface" data-icon="push_pin">push_pin</span>
+<span class="material-symbols-outlined text-[14px] text-secondary hover:text-error" data-icon="delete">delete</span>
+</div>
+</div>
+<h4 class="text-xs font-bold font-headline mb-1 text-on-surface">System Prompt Refinement v2</h4>
+<p class="text-[11px] text-on-surface-variant line-clamp-2 leading-relaxed">Adjusted the temperature parameters to 0.7 for creative synthesis stages...</p>
+<div class="mt-3 text-[9px] text-outline font-medium tracking-tighter">2 MIN AGO</div>
+</div>
+<!-- Rich Card: Image Asset -->
+<div class="bg-surface-container-high overflow-hidden group hover:bg-surface-bright transition-colors cursor-pointer">
+<div class="relative h-24 overflow-hidden">
+<img alt="Abstract architectural render with high contrast" class="w-full h-full object-cover grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-80 transition-all duration-300" data-alt="Abstract architectural render with high contrast" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCrjVZtATOBCPL59_clGRbQnEIOyplVTW--26BQIUxC7DAti_-gRsdHs00t_kk3cU2TNb5psPjZo0EW8fQ9k2pHj2Ak1YSf87D4v964PN-RTxcg34YSAe2Uqr1Xk2BG5-dkPwLLySjO3MOCJaZnVyF1EGZQadaUKZc4VjBZC93zK-oKd0XbCjRPkqDsDJcFYKO7ZJrf_xL7-V4Mlzo7XDEx0zkfZwQS-WxAuJYJWfsUU9dSNqNgupoJRmgZW3qVyL6FNjMWxHTK"/>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-high to-transparent"></div>
+<div class="absolute top-2 right-2 flex opacity-0 group-hover:opacity-100 transition-opacity space-x-2">
+<span class="material-symbols-outlined text-[14px] bg-surface-container/80 p-1 text-on-surface" data-icon="open_in_full">open_in_full</span>
+</div>
+</div>
+<div class="p-3">
+<div class="flex justify-between items-center mb-1">
+<span class="text-[9px] font-bold uppercase tracking-widest text-tertiary-dim">Asset</span>
+<span class="text-[9px] text-outline">1.2 MB</span>
+</div>
+<h4 class="text-xs font-bold font-headline text-on-surface">Hero_Layout_Concept_B.png</h4>
+</div>
+</div>
+<!-- Compact Card: Note -->
+<div class="bg-surface-container-high p-4 group hover:bg-surface-bright transition-colors cursor-pointer">
+<div class="flex justify-between items-start mb-2">
+<span class="text-[9px] font-bold uppercase tracking-widest text-secondary">Draft</span>
+<div class="flex opacity-0 group-hover:opacity-100 transition-opacity space-x-2">
+<span class="material-symbols-outlined text-[14px] text-secondary hover:text-on-surface" data-icon="push_pin">push_pin</span>
+<span class="material-symbols-outlined text-[14px] text-secondary hover:text-error" data-icon="delete">delete</span>
+</div>
+</div>
+<h4 class="text-xs font-bold font-headline mb-1 text-on-surface">Markdown Export Checklist</h4>
+<p class="text-[11px] text-on-surface-variant line-clamp-2 leading-relaxed">- Validate UTF-8 characters<br/>- Confirm image path aliases</p>
+<div class="mt-3 text-[9px] text-outline font-medium tracking-tighter">14 MIN AGO</div>
+</div>
+<!-- Compact Card: Code -->
+<div class="bg-surface-container-high p-4 border-l-2 border-[#addce6] group hover:bg-surface-bright transition-colors cursor-pointer">
+<div class="flex justify-between items-start mb-2">
+<span class="text-[9px] font-bold uppercase tracking-widest text-tertiary-dim">Code Block</span>
+<div class="flex opacity-0 group-hover:opacity-100 transition-opacity space-x-2">
+<span class="material-symbols-outlined text-[14px] text-secondary hover:text-on-surface" data-icon="content_copy">content_copy</span>
+</div>
+</div>
+<div class="bg-surface-dim p-2 rounded-sm mb-2">
+<code class="text-[10px] text-secondary-fixed-dim">tail -f /var/log/agent.log</code>
+</div>
+<h4 class="text-xs font-bold font-headline text-on-surface">Log Watch Command</h4>
+<div class="mt-3 text-[9px] text-outline font-medium tracking-tighter">1 HOUR AGO</div>
+</div>
+<!-- Card: Reminder/Metadata -->
+<div class="bg-surface-container-high p-4 group border border-dashed border-outline-variant/30 hover:border-primary/50 transition-colors cursor-pointer">
+<div class="flex items-center space-x-3">
+<span class="material-symbols-outlined text-[18px] text-primary" data-icon="add_circle">add_circle</span>
+<div>
+<h4 class="text-xs font-bold font-headline text-on-surface">Quick Capture</h4>
+<p class="text-[10px] text-on-surface-variant">Paste URL or Drag File</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Shelf Footer Action -->
+<div class="p-4 bg-surface-container-high border-t border-outline-variant/10">
+<button class="w-full bg-primary-container text-on-primary-container py-2 text-[10px] font-bold uppercase tracking-[0.2em] flex items-center justify-center space-x-2 hover:bg-primary-container/80 transition-all">
+<span class="material-symbols-outlined text-[16px]" data-icon="move_to_inbox">move_to_inbox</span>
+<span>Bulk Move to Library</span>
+</button>
+</div>
+</section>
+</main>
+</div>
+</body></html>
