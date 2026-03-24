@@ -637,9 +637,33 @@ function createSurfaceScaffold(title, description) {
     return root;
 }
 
+function createSurfaceSummary(items = []) {
+    const summary = document.createElement('div');
+    summary.className = 'surface-summary';
+    items.forEach((item) => {
+        const pill = document.createElement('div');
+        pill.className = 'surface-summary-pill';
+        const value = document.createElement('span');
+        value.className = 'surface-summary-value';
+        value.textContent = item.value;
+        const label = document.createElement('span');
+        label.className = 'surface-summary-label';
+        label.textContent = item.label;
+        pill.appendChild(value);
+        pill.appendChild(label);
+        summary.appendChild(pill);
+    });
+    return summary;
+}
+
 function renderLibraryView() {
     libraryView.innerHTML = '';
     const root = createSurfaceScaffold('Library', 'Prompt assets stay editable, searchable, and ready to reuse.');
+    root.appendChild(createSurfaceSummary([
+        { value: String(promptLibrary.getItems().length), label: 'prompts' },
+        { value: String(getPromptCategories().filter((entry) => entry !== 'all').length), label: 'categories' },
+        { value: libraryState.query ? 'filtered' : 'ready', label: 'view' },
+    ]));
     const body = document.createElement('div');
     body.className = 'library-layout';
 
@@ -697,6 +721,7 @@ function renderLibraryView() {
             card.innerHTML = `
                 <div class="surface-list-title">${prompt.title}</div>
                 <div class="surface-list-meta">${prompt.category || 'general'} · ${new Date(prompt.updatedAt).toLocaleDateString()}</div>
+                <div class="surface-list-snippet">${(prompt.text || '').replace(/\s+/g, ' ').slice(0, 92) || 'Empty prompt body'}</div>
             `;
             promptList.appendChild(card);
         });
@@ -706,6 +731,13 @@ function renderLibraryView() {
     const detailPane = document.createElement('div');
     detailPane.className = 'surface-detail-pane';
     if (selectedPrompt) {
+        const detailHeader = document.createElement('div');
+        detailHeader.className = 'surface-detail-header';
+        const detailEyebrow = document.createElement('div');
+        detailEyebrow.className = 'surface-detail-eyebrow';
+        detailEyebrow.textContent = `${selectedPrompt.category || 'general'} prompt`;
+        detailHeader.appendChild(detailEyebrow);
+
         const titleInput = document.createElement('input');
         titleInput.className = 'surface-title-input';
         titleInput.value = selectedPrompt.title;
@@ -747,6 +779,7 @@ function renderLibraryView() {
             actionRow.appendChild(button);
         });
 
+        detailPane.appendChild(detailHeader);
         detailPane.appendChild(titleInput);
         detailPane.appendChild(actionRow);
         detailPane.appendChild(bodyInput);
@@ -780,6 +813,11 @@ function renderLibraryView() {
 function renderShelfView() {
     shelfView.innerHTML = '';
     const root = createSurfaceScaffold('Shelf', 'Compact capture cards stay persistent, searchable, and ready to move back into work.');
+    root.appendChild(createSurfaceSummary([
+        { value: String(clipboardShelf.items.length), label: 'items' },
+        { value: String(clipboardShelf.items.filter((item) => item.kind === 'image').length), label: 'images' },
+        { value: String(clipboardShelf.items.filter((item) => item.pinned).length), label: 'pinned' },
+    ]));
     const body = document.createElement('div');
     body.className = 'library-layout shelf-layout';
 
@@ -875,6 +913,7 @@ function renderShelfView() {
             card.innerHTML = `
                 <div class="surface-list-title">${item.title}</div>
                 <div class="surface-list-meta">${item.kind} · ${item.source}</div>
+                <div class="surface-list-snippet">${(item.text || '').replace(/\s+/g, ' ').slice(0, 92) || 'Image capture'}</div>
             `;
             itemList.appendChild(card);
         });
@@ -884,7 +923,16 @@ function renderShelfView() {
     const detailPane = document.createElement('div');
     detailPane.className = 'surface-detail-pane';
     if (selectedItem) {
+        const detailHeader = document.createElement('div');
+        detailHeader.className = 'surface-detail-header';
+        const detailEyebrow = document.createElement('div');
+        detailEyebrow.className = 'surface-detail-eyebrow';
+        detailEyebrow.textContent = `${selectedItem.kind} · ${selectedItem.source}`;
+        detailHeader.appendChild(detailEyebrow);
+        detailPane.appendChild(detailHeader);
+
         const title = document.createElement('h3');
+        title.className = 'surface-detail-title';
         title.textContent = selectedItem.title;
         detailPane.appendChild(title);
 
@@ -946,6 +994,10 @@ function renderShelfView() {
 function renderSessionsView() {
     sessionsView.innerHTML = '';
     const root = createSurfaceScaffold('Sessions', 'Restore and inspect the active workspace state without turning sessions into a platform feature.');
+    root.appendChild(createSurfaceSummary([
+        { value: String(tabs.getTabs().length), label: 'open tabs' },
+        { value: currentFilePath ? 'restored' : 'idle', label: 'active state' },
+    ]));
     const body = document.createElement('div');
     body.className = 'surface-stack';
 
@@ -983,6 +1035,10 @@ function renderSessionsView() {
 function renderSearchView() {
     searchView.innerHTML = '';
     const root = createSurfaceScaffold('Search', 'Search is cross-asset and operational, not a separate analytics product.');
+    root.appendChild(createSurfaceSummary([
+        { value: searchState.query ? String(getSearchResults().length) : '0', label: 'results' },
+        { value: searchState.filter, label: 'filter' },
+    ]));
     const body = document.createElement('div');
     body.className = 'surface-stack';
 
@@ -1449,11 +1505,7 @@ function updateTopbar() {
 
     shellTopbarActions.innerHTML = '';
     const actionConfigs = {
-        workspace: [
-            { label: 'Library', onClick: () => setActiveSection('library') },
-            { label: 'Shelf', onClick: () => setActiveSection('shelf') },
-            { label: 'Search', onClick: () => setActiveSection('search') },
-        ],
+        workspace: [],
         library: [
             { label: 'New Prompt', onClick: () => createPromptFromCurrent() },
             { label: 'Shelf', onClick: () => setActiveSection('shelf') },
@@ -1482,6 +1534,7 @@ function updateTopbar() {
         button.onclick = onClick;
         shellTopbarActions.appendChild(button);
     });
+    shellTopbarActions.classList.toggle('empty', shellTopbarActions.children.length === 0);
 }
 
 function setActiveSection(section) {

@@ -352,32 +352,70 @@ body {
 .tab-item {
   display: flex;
   align-items: center;
+  gap: 8px;
   padding: 0 12px;
-  min-width: 100px;
-  max-width: 200px;
-  height: 100%;
+  min-width: 116px;
+  max-width: 220px;
+  height: 34px;
+  margin: 0 2px 0 0;
   font-size: 13px;
   color: #9da5b4;
   cursor: pointer;
-  border-right: 1px solid var(--border);
+  border-right: 1px solid rgba(255,255,255,0.03);
+  border-radius: 9px 9px 0 0;
   user-select: none;
-  background: #21252b;
+  background: #20242a;
   position: relative;
-  transition: background 0.1s, color 0.1s;
+  transition: background 0.14s, color 0.14s, border-color 0.14s;
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
 
 .tab-item:hover {
-  background: #262a33;
+  background: #272c34;
 }
 
 .tab-item.active {
-  background: var(--bg-editor);
-  /* Matches Editor */
-  color: #d7dae0;
-  border-top: 2px solid var(--accent);
-  /* Blue Top Border */
+  background: #1b1f25;
+  color: #e7ebf0;
+  border-top: 2px solid rgba(97, 175, 239, 0.9);
+  box-shadow: inset 0 -1px 0 #1b1f25;
+}
+
+.tab-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 560;
+}
+
+.tab-dirty-dot {
+  color: #d8a15f;
+  font-size: 12px;
+}
+
+.tab-close {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  color: #828b96;
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s, color 0.12s;
+}
+
+.tab-item:hover .tab-close,
+.tab-item.active .tab-close {
+  opacity: 1;
+}
+
+.tab-close:hover {
+  background: rgba(255,255,255,0.06);
+  color: #eef2f6;
 }
 
 /* Ensure editor grows */
@@ -1305,6 +1343,10 @@ body {
   gap: 8px;
 }
 
+.shell-topbar-actions.empty {
+  display: none;
+}
+
 .shell-action-btn {
   border: 1px solid rgba(255, 255, 255, 0.06);
   background: #23272e;
@@ -1369,6 +1411,35 @@ body {
   line-height: 1.5;
 }
 
+.surface-summary {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.surface-summary-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #20242a;
+  border: 1px solid rgba(255,255,255,0.04);
+  border-radius: 12px;
+}
+
+.surface-summary-value {
+  font-size: 18px;
+  font-weight: 680;
+  color: #eef2f6;
+}
+
+.surface-summary-label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #7f8792;
+}
+
 .library-layout {
   display: grid;
   grid-template-columns: 180px 280px minmax(0, 1fr);
@@ -1389,6 +1460,11 @@ body {
   border-radius: 14px;
   padding: 16px;
   box-sizing: border-box;
+}
+
+.surface-list-column,
+.surface-detail-pane {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.015);
 }
 
 .surface-side-title {
@@ -1469,6 +1545,7 @@ body {
   padding: 12px;
   text-align: left;
   cursor: pointer;
+  transition: background 0.14s, border-color 0.14s, transform 0.14s;
 }
 
 .surface-list-item.compact {
@@ -1478,6 +1555,8 @@ body {
 .surface-list-item:hover,
 .surface-list-item.active {
   background: #2a3037;
+  border-color: rgba(97,175,239,0.16);
+  transform: translateY(-1px);
 }
 
 .surface-list-title {
@@ -1491,6 +1570,13 @@ body {
   color: #8b939e;
 }
 
+.surface-list-snippet {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #b3bac4;
+}
+
 .surface-action-row {
   display: flex;
   flex-wrap: wrap;
@@ -1502,6 +1588,24 @@ body {
   margin-bottom: 12px;
   font-size: 12px;
   color: #8b939e;
+}
+
+.surface-detail-header {
+  margin-bottom: 10px;
+}
+
+.surface-detail-eyebrow {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #7f8792;
+}
+
+.surface-detail-title {
+  margin: 0 0 16px;
+  font-size: 24px;
+  line-height: 1.15;
+  color: #eff2f6;
 }
 
 .surface-meta-grid {
@@ -1553,7 +1657,8 @@ body {
 
 .surface-empty {
   color: #7d848f;
-  padding: 20px 0;
+  padding: 24px 0;
+  line-height: 1.5;
 }
 
 .surface-code-block {
@@ -1636,6 +1741,7 @@ body {
   font-weight: 550;
   line-height: 1;
   cursor: pointer;
+  transition: background 0.14s, color 0.14s, border-color 0.14s;
 }
 
 .workspace-toolbar-btn:hover {
@@ -1675,6 +1781,7 @@ body {
   background: #1d2127;
   color: #7f8792;
   cursor: pointer;
+  transition: background 0.14s, color 0.14s;
 }
 
 .tab-scroll-btn:hover {
@@ -1743,5 +1850,9 @@ body {
 
   .workspace-toolbar-group {
     justify-content: space-between;
+  }
+
+  .surface-summary {
+    gap: 8px;
   }
 }
