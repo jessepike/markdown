@@ -685,6 +685,21 @@ function createEmptyState(title, description, actions = []) {
     return empty;
 }
 
+function createSurfaceCard(title, description = '') {
+    const card = document.createElement('div');
+    card.className = 'surface-card';
+    const heading = document.createElement('h3');
+    heading.textContent = title;
+    card.appendChild(heading);
+    if (description) {
+        const copy = document.createElement('p');
+        copy.className = 'surface-card-copy';
+        copy.textContent = description;
+        card.appendChild(copy);
+    }
+    return card;
+}
+
 function renderLibraryView() {
     libraryView.innerHTML = '';
     const root = createSurfaceScaffold('Library', 'Prompt assets stay editable, searchable, and ready to reuse.');
@@ -1048,11 +1063,9 @@ function renderSessionsView() {
         { value: currentFilePath ? 'restored' : 'idle', label: 'active state' },
     ]));
     const body = document.createElement('div');
-    body.className = 'surface-stack';
+    body.className = 'surface-grid surface-grid--secondary';
 
-    const openTabsCard = document.createElement('div');
-    openTabsCard.className = 'surface-card';
-    openTabsCard.innerHTML = '<h3>Open Tabs</h3>';
+    const openTabsCard = createSurfaceCard('Open Tabs', 'Jump back into the exact document that is already active in this session.');
     const openList = document.createElement('div');
     openList.className = 'surface-simple-list';
     if (!tabs.getTabs().length) {
@@ -1076,12 +1089,26 @@ function renderSessionsView() {
     openTabsCard.appendChild(openList);
     body.appendChild(openTabsCard);
 
-    const restoreCard = document.createElement('div');
-    restoreCard.className = 'surface-card';
-    restoreCard.innerHTML = `
-        <h3>Session Restore</h3>
-        <p>Workspace, temp tabs, and open file-backed tabs persist across restarts. Active path: ${currentFilePath || 'none'}.</p>
-    `;
+    const restoreCard = createSurfaceCard('Session Restore', 'Workspace, temp tabs, and file-backed tabs persist across restarts.');
+    const restoreMeta = document.createElement('div');
+    restoreMeta.className = 'surface-meta-grid surface-meta-grid--stacked';
+    [
+        ['Active path', currentFilePath || 'none'],
+        ['View mode', viewMode],
+        ['Open tabs', String(tabs.getTabs().length)],
+    ].forEach(([label, value]) => {
+        const field = document.createElement('div');
+        field.className = 'surface-meta-field';
+        const title = document.createElement('span');
+        title.textContent = label;
+        const copy = document.createElement('strong');
+        copy.className = 'surface-emphasis-copy';
+        copy.textContent = value;
+        field.appendChild(title);
+        field.appendChild(copy);
+        restoreMeta.appendChild(field);
+    });
+    restoreCard.appendChild(restoreMeta);
     body.appendChild(restoreCard);
 
     root.appendChild(body);
@@ -1098,6 +1125,7 @@ function renderSearchView() {
     const body = document.createElement('div');
     body.className = 'surface-stack';
 
+    const searchCard = createSurfaceCard('Search Workspace', 'Look across prompts, shelf items, open tabs, and recent files from one place.');
     const toolbar = document.createElement('div');
     toolbar.className = 'surface-action-row';
     const queryInput = document.createElement('input');
@@ -1124,15 +1152,17 @@ function renderSearchView() {
         renderSearchView();
     };
     toolbar.appendChild(filter);
-    body.appendChild(toolbar);
+    searchCard.appendChild(toolbar);
+    body.appendChild(searchCard);
 
+    const resultsCard = createSurfaceCard('Results', searchState.query ? `Showing matches for “${searchState.query}”.` : 'Results stay scoped to working assets, not analytics or history.');
     const results = document.createElement('div');
     results.className = 'surface-list';
     getSearchResults().forEach((result) => {
         const item = document.createElement('button');
         item.type = 'button';
         item.className = 'surface-list-item';
-        item.innerHTML = `<div class="surface-list-title">${result.title}</div><div class="surface-list-meta">${result.type} · ${result.subtitle}</div>`;
+        item.innerHTML = `<div class="surface-list-title">${result.title}</div><div class="surface-list-meta">${result.type} · ${result.subtitle}</div><div class="surface-list-snippet">Open this ${result.type} in its working surface.</div>`;
         item.onclick = async () => {
             if (result.type === 'prompt') {
                 libraryState.selectedPromptId = result.id;
@@ -1161,7 +1191,8 @@ function renderSearchView() {
         results.appendChild(empty);
     }
 
-    body.appendChild(results);
+    resultsCard.appendChild(results);
+    body.appendChild(resultsCard);
     root.appendChild(body);
     searchView.appendChild(root);
 }
@@ -1169,6 +1200,15 @@ function renderSearchView() {
 function renderSettingsView() {
     settingsView.innerHTML = '';
     const root = createSurfaceScaffold('Settings', 'Keep settings focused on reliable editing, preview, restore, and output behavior.');
+    root.appendChild(createSurfaceSummary([
+        { value: `${prefs.get('editorFontSize')}px`, label: 'editor type' },
+        { value: prefs.get('syncScroll') ? 'synced' : 'manual', label: 'scroll' },
+        { value: prefs.get('renderFrontmatter') ? 'cards on' : 'cards off', label: 'frontmatter' },
+    ]));
+    const body = document.createElement('div');
+    body.className = 'surface-grid surface-grid--secondary';
+    const editorCard = createSurfaceCard('Editor', 'Core editing and output defaults for daily work.');
+    const behaviorCard = createSurfaceCard('Behavior', 'Safety and restore settings that affect how the workbench reacts.');
     const form = document.createElement('div');
     form.className = 'surface-meta-grid settings-grid';
 
@@ -1191,7 +1231,10 @@ function renderSettingsView() {
         field.appendChild(input);
         form.appendChild(field);
     });
+    editorCard.appendChild(form);
 
+    const toggleStack = document.createElement('div');
+    toggleStack.className = 'surface-stack';
     [
         ['syncScroll', 'Sync preview scroll'],
         ['renderFrontmatter', 'Render frontmatter cards'],
@@ -1209,10 +1252,12 @@ function renderSettingsView() {
         span.textContent = label;
         field.appendChild(input);
         field.appendChild(span);
-        form.appendChild(field);
+        toggleStack.appendChild(field);
     });
-
-    root.appendChild(form);
+    behaviorCard.appendChild(toggleStack);
+    body.appendChild(editorCard);
+    body.appendChild(behaviorCard);
+    root.appendChild(body);
     settingsView.appendChild(root);
 }
 
@@ -1477,13 +1522,13 @@ document.addEventListener('mouseup', () => {
 });
 // Editor Resizer Logic
 const openBtn = document.createElement('button');
-openBtn.textContent = 'Open';
+openBtn.textContent = 'Open File';
 openBtn.className = 'workspace-toolbar-btn';
 openBtn.onclick = openFile;
 openBtn.title = 'Open File (Cmd+O)';
 
 const newTabBtn = document.createElement('button');
-newTabBtn.textContent = 'New Tab';
+newTabBtn.textContent = 'New Draft';
 newTabBtn.className = 'workspace-toolbar-btn';
 newTabBtn.onclick = createTempTab;
 newTabBtn.title = 'New temporary tab (Cmd+T)';
@@ -1501,7 +1546,7 @@ codeBtn.onclick = () => setViewMode(VIEW_MODES.EDITOR);
 codeBtn.title = 'Source View (Cmd+E)';
 
 const shelfBtn = document.createElement('button');
-shelfBtn.textContent = 'Shelf Panel';
+shelfBtn.textContent = 'Toggle Shelf';
 shelfBtn.className = 'workspace-toolbar-btn';
 shelfBtn.title = 'Toggle shelf panel (Cmd+Shift+K). Add clipboard: Cmd+Shift+V, selection: Cmd+Shift+Y, search: Cmd+Shift+J, save prompt: Cmd+Shift+G';
 shelfBtn.onclick = () => clipboardShelf.toggle();

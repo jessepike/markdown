@@ -1462,6 +1462,20 @@ body {
   box-sizing: border-box;
 }
 
+.surface-card h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 640;
+  color: #eef2f6;
+}
+
+.surface-card-copy {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #8f97a2;
+}
+
 .surface-list-column,
 .surface-detail-pane {
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.015);
@@ -1615,6 +1629,10 @@ body {
   margin-top: 16px;
 }
 
+.surface-meta-grid--stacked {
+  grid-template-columns: 1fr;
+}
+
 .surface-meta-field,
 .surface-toggle {
   display: flex;
@@ -1639,6 +1657,15 @@ body {
   gap: 16px;
 }
 
+.surface-grid {
+  display: grid;
+  gap: 18px;
+}
+
+.surface-grid--secondary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .surface-simple-list {
   display: flex;
   flex-direction: column;
@@ -1653,6 +1680,12 @@ body {
   padding: 10px 12px;
   text-align: left;
   cursor: pointer;
+  transition: background 0.14s, transform 0.14s;
+}
+
+.surface-simple-item:hover {
+  background: #22262d;
+  transform: translateY(-1px);
 }
 
 .surface-empty,
@@ -1714,6 +1747,13 @@ body {
 
 .settings-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.surface-emphasis-copy {
+  font-size: 14px;
+  color: #eef2f6;
+  font-weight: 620;
+  word-break: break-word;
 }
 
 .tab-strip {
@@ -1864,6 +1904,11 @@ body {
 
   .library-layout,
   .shelf-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .surface-grid--secondary,
+  .settings-grid {
     grid-template-columns: 1fr;
   }
 
