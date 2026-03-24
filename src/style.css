@@ -1655,10 +1655,31 @@ body {
   cursor: pointer;
 }
 
-.surface-empty {
+.surface-empty,
+.surface-empty-state {
   color: #7d848f;
-  padding: 24px 0;
   line-height: 1.5;
+}
+
+.surface-empty-state {
+  padding: 22px 18px;
+  background: #171a1f;
+  border: 1px dashed rgba(255,255,255,0.08);
+  border-radius: 14px;
+}
+
+.surface-empty-title {
+  font-size: 15px;
+  font-weight: 630;
+  color: #eef2f6;
+}
+
+.surface-empty-description {
+  margin-top: 8px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: #8f97a2;
+  max-width: 56ch;
 }
 
 .surface-code-block {
@@ -1698,7 +1719,7 @@ body {
 .tab-strip {
   position: relative;
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) 32px;
+  grid-template-columns: 28px minmax(0, 1fr) 28px 32px;
   align-items: stretch;
   background: #1d2127;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
@@ -1782,6 +1803,15 @@ body {
   color: #7f8792;
   cursor: pointer;
   transition: background 0.14s, color 0.14s;
+}
+
+.tab-scroll-btn.hidden {
+  visibility: hidden;
+}
+
+.tab-scroll-btn:disabled {
+  color: #545b65;
+  cursor: default;
 }
 
 .tab-scroll-btn:hover {

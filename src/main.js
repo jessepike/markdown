@@ -656,6 +656,35 @@ function createSurfaceSummary(items = []) {
     return summary;
 }
 
+function createEmptyState(title, description, actions = []) {
+    const empty = document.createElement('div');
+    empty.className = 'surface-empty-state';
+    const titleEl = document.createElement('div');
+    titleEl.className = 'surface-empty-title';
+    titleEl.textContent = title;
+    const descEl = document.createElement('div');
+    descEl.className = 'surface-empty-description';
+    descEl.textContent = description;
+    empty.appendChild(titleEl);
+    empty.appendChild(descEl);
+
+    if (actions.length) {
+        const actionRow = document.createElement('div');
+        actionRow.className = 'surface-action-row';
+        actions.forEach(({ label, onClick }) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'shell-action-btn';
+            button.textContent = label;
+            button.onclick = onClick;
+            actionRow.appendChild(button);
+        });
+        empty.appendChild(actionRow);
+    }
+
+    return empty;
+}
+
 function renderLibraryView() {
     libraryView.innerHTML = '';
     const root = createSurfaceScaffold('Library', 'Prompt assets stay editable, searchable, and ready to reuse.');
@@ -705,9 +734,11 @@ function renderLibraryView() {
     libraryState.selectedPromptId = selectedPrompt?.id || null;
 
     if (!prompts.length) {
-        const empty = document.createElement('div');
-        empty.className = 'surface-empty';
-        empty.textContent = 'No prompts yet. Save a selection or create one from the current document.';
+        const empty = createEmptyState(
+            'No prompts yet',
+            'Save the current document as a reusable prompt asset or create a blank prompt to start building the library.',
+            [{ label: 'New Prompt', onClick: () => createPromptFromCurrent() }]
+        );
         promptList.appendChild(empty);
     } else {
         prompts.forEach((prompt) => {
@@ -801,6 +832,14 @@ function renderLibraryView() {
         notesField.appendChild(notesLabel);
         notesField.appendChild(notesInput);
         detailPane.appendChild(notesField);
+    } else {
+        detailPane.appendChild(createEmptyState(
+            'Select a prompt',
+            'Choose a prompt from the list to edit its body, tags, and notes.',
+            libraryState.query
+                ? []
+                : [{ label: 'New Prompt', onClick: () => createPromptFromCurrent() }]
+        ));
     }
 
     body.appendChild(categoriesPane);
@@ -897,9 +936,14 @@ function renderShelfView() {
     shelfState.selectedItemId = selectedItem?.id || null;
 
     if (!items.length) {
-        const empty = document.createElement('div');
-        empty.className = 'surface-empty';
-        empty.textContent = 'No shelf items yet. Add clipboard text, selection snippets, or images.';
+        const empty = createEmptyState(
+            'Shelf is empty',
+            'Capture clipboard content, add an image, or save a quick note to start staging working material.',
+            [
+                { label: 'Add Clipboard', onClick: () => clipboardShelf.addFromClipboard() },
+                { label: 'Add Image', onClick: () => imageInput.click() },
+            ]
+        );
         itemList.appendChild(empty);
     } else {
         items.forEach((item) => {
@@ -983,6 +1027,11 @@ function renderShelfView() {
             actionRow.appendChild(button);
         });
         detailPane.appendChild(actionRow);
+    } else {
+        detailPane.appendChild(createEmptyState(
+            'Select a shelf item',
+            'Open an item to edit its contents, copy it back out, pin it, or move it into the Library.'
+        ));
     }
 
     body.appendChild(listPane);
@@ -1006,6 +1055,13 @@ function renderSessionsView() {
     openTabsCard.innerHTML = '<h3>Open Tabs</h3>';
     const openList = document.createElement('div');
     openList.className = 'surface-simple-list';
+    if (!tabs.getTabs().length) {
+        openList.appendChild(createEmptyState(
+            'No tabs restored',
+            'Open a document or create a new tab in Workspace and it will appear here on the next refresh.',
+            [{ label: 'Go To Workspace', onClick: () => setActiveSection('workspace') }]
+        ));
+    }
     tabs.getTabs().forEach((tab) => {
         const row = document.createElement('button');
         row.type = 'button';
@@ -1096,9 +1152,12 @@ function renderSearchView() {
     });
 
     if (!results.children.length) {
-        const empty = document.createElement('div');
-        empty.className = 'surface-empty';
-        empty.textContent = searchState.query ? 'No matches.' : 'Start typing to search across active assets.';
+        const empty = createEmptyState(
+            searchState.query ? 'No matches' : 'Search is ready',
+            searchState.query
+                ? 'Try a broader term or switch the filter to search across more asset types.'
+                : 'Start typing to search across prompts, shelf items, open tabs, and recent files.'
+        );
         results.appendChild(empty);
     }
 

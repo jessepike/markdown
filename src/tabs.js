@@ -3,6 +3,8 @@ export class Tabs {
         this.element = null;
         this.scroller = null;
         this.wrapper = null;
+        this.leftBtn = null;
+        this.rightBtn = null;
         this.overflowBtn = null;
         this.overflowMenu = null;
         this.tabs = []; // Array of { path, name, dirty, closable }
@@ -16,13 +18,13 @@ export class Tabs {
         this.wrapper.className = 'tab-strip';
         this.wrapper.setAttribute('data-tauri-drag-region', 'true');
 
-        const leftBtn = document.createElement('button');
-        leftBtn.type = 'button';
-        leftBtn.className = 'tab-scroll-btn';
-        leftBtn.textContent = '‹';
-        leftBtn.title = 'Scroll tabs left';
-        leftBtn.setAttribute('data-tauri-drag-region', 'false');
-        leftBtn.onclick = () => this.scrollTabs(-180);
+        this.leftBtn = document.createElement('button');
+        this.leftBtn.type = 'button';
+        this.leftBtn.className = 'tab-scroll-btn';
+        this.leftBtn.textContent = '‹';
+        this.leftBtn.title = 'Scroll tabs left';
+        this.leftBtn.setAttribute('data-tauri-drag-region', 'false');
+        this.leftBtn.onclick = () => this.scrollTabs(-180);
 
         this.scroller = document.createElement('div');
         this.scroller.className = 'tab-bar-scroll';
@@ -31,6 +33,14 @@ export class Tabs {
         this.element = document.createElement('div');
         this.element.className = 'tab-bar';
         this.element.setAttribute('data-tauri-drag-region', 'true');
+
+        this.rightBtn = document.createElement('button');
+        this.rightBtn.type = 'button';
+        this.rightBtn.className = 'tab-scroll-btn';
+        this.rightBtn.textContent = '›';
+        this.rightBtn.title = 'Scroll tabs right';
+        this.rightBtn.setAttribute('data-tauri-drag-region', 'false');
+        this.rightBtn.onclick = () => this.scrollTabs(180);
 
         this.overflowBtn = document.createElement('button');
         this.overflowBtn.type = 'button';
@@ -50,10 +60,13 @@ export class Tabs {
         this.onClose = onClose;
 
         this.scroller.appendChild(this.element);
-        this.wrapper.appendChild(leftBtn);
+        this.wrapper.appendChild(this.leftBtn);
         this.wrapper.appendChild(this.scroller);
+        this.wrapper.appendChild(this.rightBtn);
         this.wrapper.appendChild(this.overflowBtn);
         this.wrapper.appendChild(this.overflowMenu);
+
+        this.scroller.addEventListener('scroll', () => this.updateScrollButtons());
 
         document.addEventListener('click', (event) => {
             if (!this.wrapper?.contains(event.target)) {
@@ -62,6 +75,7 @@ export class Tabs {
         });
 
         container.insertBefore(this.wrapper, container.firstChild);
+        this.updateScrollButtons();
     }
 
     addTab(path, options = {}) {
@@ -177,10 +191,21 @@ export class Tabs {
 
             this.overflowMenu.appendChild(overflowItem);
         });
+        this.updateScrollButtons();
     }
 
     scrollTabs(delta) {
         this.scroller?.scrollBy({ left: delta, behavior: 'smooth' });
+    }
+
+    updateScrollButtons() {
+        if (!this.scroller || !this.leftBtn || !this.rightBtn) return;
+        const maxScroll = this.scroller.scrollWidth - this.scroller.clientWidth;
+        const canScroll = maxScroll > 4;
+        this.leftBtn.disabled = !canScroll || this.scroller.scrollLeft <= 4;
+        this.rightBtn.disabled = !canScroll || this.scroller.scrollLeft >= maxScroll - 4;
+        this.leftBtn.classList.toggle('hidden', !canScroll);
+        this.rightBtn.classList.toggle('hidden', !canScroll);
     }
 }
 
