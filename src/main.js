@@ -808,14 +808,28 @@ function renderShelfView() {
     imageInput.type = 'file';
     imageInput.accept = 'image/*';
     imageInput.className = 'surface-file-input';
+    imageInput.hidden = true;
     imageInput.onchange = async (event) => {
         const [file] = Array.from(event.target.files || []);
         if (file) {
             await clipboardShelf.addImage(file, { source: 'shelf-upload' });
+            imageInput.value = '';
             renderShelfView();
         }
     };
+
+    const addImageBtn = document.createElement('button');
+    addImageBtn.type = 'button';
+    addImageBtn.className = 'shell-action-btn';
+    addImageBtn.textContent = 'Add Image';
+    addImageBtn.onclick = () => imageInput.click();
+    ingestRow.appendChild(addImageBtn);
     ingestRow.appendChild(imageInput);
+
+    const ingestMeta = document.createElement('div');
+    ingestMeta.className = 'surface-inline-meta';
+    ingestMeta.textContent = 'Images are stored locally in the Shelf.';
+    listPane.appendChild(ingestMeta);
     listPane.appendChild(ingestRow);
 
     const noteInput = document.createElement('textarea');
@@ -1259,6 +1273,16 @@ editorContainer.className = 'editor-pane';
 // Init Tabs
 tabs.init(editorContainer, (path) => switchTab(path), (path) => closeTab(path));
 
+const workspaceToolbar = document.createElement('div');
+workspaceToolbar.className = 'workspace-toolbar';
+workspaceToolbar.setAttribute('data-tauri-drag-region', 'false');
+
+const workspaceModeGroup = document.createElement('div');
+workspaceModeGroup.className = 'workspace-toolbar-group workspace-toolbar-group--segmented';
+
+const workspaceActionGroup = document.createElement('div');
+workspaceActionGroup.className = 'workspace-toolbar-group';
+
 const previewContainer = document.createElement('div');
 previewContainer.className = 'preview-pane';
 const markdownBody = document.createElement('div');
@@ -1337,62 +1361,44 @@ document.addEventListener('mouseup', () => {
     }
 });
 // Editor Resizer Logic
-const controls = document.createElement('div');
-controls.className = 'controls';
-controls.setAttribute('data-tauri-drag-region', 'false');
-// ... rest of DOM setup matches previous flow, but now listeners are safe.
-
-// Open Button
 const openBtn = document.createElement('button');
 openBtn.textContent = 'Open';
-openBtn.className = 'btn';
+openBtn.className = 'workspace-toolbar-btn';
 openBtn.onclick = openFile;
 openBtn.title = 'Open File (Cmd+O)';
 
 const newTabBtn = document.createElement('button');
-newTabBtn.textContent = '+ Tab';
-newTabBtn.className = 'btn';
+newTabBtn.textContent = 'New Tab';
+newTabBtn.className = 'workspace-toolbar-btn';
 newTabBtn.onclick = createTempTab;
 newTabBtn.title = 'New temporary tab (Cmd+T)';
 
-// Preview Toggle Button
 const previewBtn = document.createElement('button');
-previewBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
-previewBtn.className = 'btn icon-btn';
+previewBtn.textContent = 'Split';
+previewBtn.className = 'workspace-toolbar-btn workspace-toolbar-btn--mode';
 previewBtn.onclick = () => setViewMode(VIEW_MODES.SPLIT, { ratio: 25 });
-previewBtn.title = 'Preview Review Mode (Split, Cmd+P)';
+previewBtn.title = 'Split View (Cmd+P)';
 
-// Code View Button (Raw)
 const codeBtn = document.createElement('button');
-codeBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>`;
-codeBtn.className = 'btn icon-btn';
+codeBtn.textContent = 'Source';
+codeBtn.className = 'workspace-toolbar-btn workspace-toolbar-btn--mode';
 codeBtn.onclick = () => setViewMode(VIEW_MODES.EDITOR);
-codeBtn.title = 'Raw View (Cmd+E)';
+codeBtn.title = 'Source View (Cmd+E)';
 
 const shelfBtn = document.createElement('button');
-shelfBtn.textContent = 'Panel';
-shelfBtn.className = 'btn';
+shelfBtn.textContent = 'Shelf Panel';
+shelfBtn.className = 'workspace-toolbar-btn';
 shelfBtn.title = 'Toggle shelf panel (Cmd+Shift+K). Add clipboard: Cmd+Shift+V, selection: Cmd+Shift+Y, search: Cmd+Shift+J, save prompt: Cmd+Shift+G';
 shelfBtn.onclick = () => clipboardShelf.toggle();
 
-controls.appendChild(previewBtn);
-controls.appendChild(codeBtn);
-controls.appendChild(openBtn);
-controls.appendChild(newTabBtn);
-controls.appendChild(shelfBtn);
-editorContainer.appendChild(controls);
-
-function syncControlsLayout() {
-    const tabBar = editorContainer.querySelector('.tab-bar');
-    if (!tabBar) return;
-    const extraRight = Math.max(160, controls.offsetWidth + 24);
-    tabBar.style.paddingRight = `${extraRight}px`;
-}
-
-const controlsResizeObserver = new ResizeObserver(() => syncControlsLayout());
-controlsResizeObserver.observe(controls);
-window.addEventListener('resize', syncControlsLayout);
-setTimeout(syncControlsLayout, 0);
+workspaceModeGroup.appendChild(codeBtn);
+workspaceModeGroup.appendChild(previewBtn);
+workspaceActionGroup.appendChild(openBtn);
+workspaceActionGroup.appendChild(newTabBtn);
+workspaceActionGroup.appendChild(shelfBtn);
+workspaceToolbar.appendChild(workspaceModeGroup);
+workspaceToolbar.appendChild(workspaceActionGroup);
+editorContainer.appendChild(workspaceToolbar);
 
 const sectionViews = {
     workspace: app,
@@ -1444,9 +1450,9 @@ function updateTopbar() {
     shellTopbarActions.innerHTML = '';
     const actionConfigs = {
         workspace: [
-            { label: 'Open', onClick: () => openFile() },
-            { label: 'New Tab', onClick: () => createTempTab() },
             { label: 'Library', onClick: () => setActiveSection('library') },
+            { label: 'Shelf', onClick: () => setActiveSection('shelf') },
+            { label: 'Search', onClick: () => setActiveSection('search') },
         ],
         library: [
             { label: 'New Prompt', onClick: () => createPromptFromCurrent() },

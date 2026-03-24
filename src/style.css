@@ -321,19 +321,14 @@ body {
   overflow-x: auto;
   border-bottom: 1px solid var(--border);
   scrollbar-width: none;
-  /* Traffic Light Spacing */
-  padding-left: 0;
-  padding-right: 150px;
-  /* Space for controls */
-  transition: padding-left 0.2s;
+  padding: 0 8px 0 0;
   app-region: drag;
   -webkit-app-region: drag;
 }
 
 /* When sidebar is hidden, we need space for traffic lights in the tab bar */
 #app:not(.has-sidebar) .tab-bar {
-  padding-left: 80px;
-  /* Approx space for traffic lights on Mac */
+  padding-left: 8px;
 }
 
 /* Sidebar Traffic Light Handling */
@@ -415,57 +410,6 @@ body {
   margin-top: 1.5em;
   margin-bottom: 0.5em;
   font-weight: 600;
-}
-
-.controls {
-  position: absolute;
-  top: 4px;
-  right: 8px;
-  z-index: 20;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  max-width: calc(100% - 180px);
-  overflow-x: auto;
-  scrollbar-width: none;
-  app-region: no-drag;
-  -webkit-app-region: no-drag;
-}
-
-.controls::-webkit-scrollbar {
-  display: none;
-}
-
-.btn {
-  background: var(--bg-app);
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-family: var(--font-ui);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 28px;
-}
-
-.icon-btn {
-  padding: 0 8px;
-}
-
-.btn:hover {
-  color: var(--text-main);
-  border-color: var(--text-muted);
-  background: #2c313a;
-}
-
-.btn.active {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: rgba(97, 175, 239, 0.1);
 }
 
 /* Preview Pane */
@@ -1554,6 +1498,12 @@ body {
   margin-bottom: 14px;
 }
 
+.surface-inline-meta {
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: #8b939e;
+}
+
 .surface-meta-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1625,8 +1575,15 @@ body {
 }
 
 .surface-file-input {
-  color: #c9d0d9;
-  max-width: 180px;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .settings-grid {
@@ -1640,6 +1597,68 @@ body {
   align-items: stretch;
   background: #1d2127;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.workspace-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #1b1f25;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.workspace-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.workspace-toolbar-group--segmented {
+  gap: 0;
+  background: #16191e;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 2px;
+}
+
+.workspace-toolbar-btn {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: #23272e;
+  color: #d2d6dd;
+  padding: 8px 12px;
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.workspace-toolbar-btn:hover {
+  background: #2b3038;
+  color: #eff2f5;
+}
+
+.workspace-toolbar-btn--mode {
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  min-width: 72px;
+  color: #9098a3;
+}
+
+.workspace-toolbar-btn--mode:hover {
+  background: #252a32;
+}
+
+.workspace-toolbar-btn--mode.active {
+  background: #2e3540;
+  color: #f4f7fb;
+  box-shadow: inset 0 0 0 1px rgba(97, 175, 239, 0.28);
 }
 
 .tab-bar-scroll {
@@ -1715,5 +1734,14 @@ body {
     grid-template-columns: 1fr;
     height: auto;
     padding: 14px 16px;
+  }
+
+  .workspace-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .workspace-toolbar-group {
+    justify-content: space-between;
   }
 }
